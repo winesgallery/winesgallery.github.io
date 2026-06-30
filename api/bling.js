@@ -40,6 +40,19 @@ export default async function handler(req, res) {
       payload.contato = { id: contatoId };
     }
  
+    // Resolve o ID da forma de pagamento (PIX/Boleto/Transferência) cadastrada no Bling
+    if (Array.isArray(payload?.parcelas) && payload.parcelas.length) {
+      const formaPagamentoId = await resolveFormaPagamentoId(payload.parcelas[0].formaPagamentoTipo, accessToken);
+      if (!formaPagamentoId) {
+        return res.status(400).json({ error: { description: 'Não foi possível localizar uma forma de pagamento cadastrada no Bling. Cadastre formas de pagamento em Bling > Vendas > Formas de Pagamento.' } });
+      }
+      payload.parcelas = payload.parcelas.map(p => ({
+        valor: p.valor,
+        dataVencimento: p.dataVencimento,
+        formaPagamento: { id: formaPagamentoId }
+      }));
+    }
+ 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -112,6 +125,22 @@ async function getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT
   return refreshData.access_token;
 }
  
+async function resolveFormaPagamentoId(tipo, accessToken) {
+  const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+  const keywords = { pix: 'pix', boleto: 'boleto', transferencia: 'transferência' };
+  const keyword = keywords[tipo] || tipo || '';
+ 
+  try {
+    const resp = await fetch('https://www.bling.com.br/Api/v3/formas-pagamentos?limite=100', { headers });
+    const data = await resp.json();
+    const lista = data?.data || [];
+    if (!lista.length) return null;
+    const match = lista.find(f => (f.descricao || '').toLowerCase().includes(keyword.toLowerCase()));
+    return (match || lista[0]).id;
+  } catch (e) {
+    return null;
+  }
+}
 async function resolveContatoId(contato, accessToken) {
   const documento = (contato.documento || '').replace(/\D/g, '');
   const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
@@ -128,15 +157,19 @@ async function resolveContatoId(contato, accessToken) {
   // Não encontrou: cria um contato novo
   try {
     const tipoPessoa = documento.length > 11 ? 'J' : 'F';
+    const body = {
+      nome: contato.nome || 'Cliente sem nome',
+      tipoPessoa,
+      numeroDocumento: documento || undefined,
+      situacao: 'A'
+    };
+    if (tipoPessoa === 'J' && contato.ie) {
+      body.ie = contato.ie;
+    }
     const createResp = await fetch('https://www.bling.com.br/Api/v3/contatos', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        nome: contato.nome || 'Cliente sem nome',
-        tipoPessoa,
-        numeroDocumento: documento || undefined,
-        situacao: 'A'
-      })
+      body: JSON.stringify(body)
     });
     const createData = await createResp.json();
     if (createResp.ok && createData?.data?.id) return createData.data.id;
@@ -145,4 +178,3 @@ async function resolveContatoId(contato, accessToken) {
     return null;
   }
 }
- 
