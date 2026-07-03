@@ -53,6 +53,8 @@ export default async function handler(req, res) {
       }));
     }
  
+    console.log('PAYLOAD ENVIADO AO BLING:', JSON.stringify(payload));
+ 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -65,6 +67,7 @@ export default async function handler(req, res) {
     const result = await response.json();
  
     if (!response.ok) {
+      console.error('ERRO DO BLING:', JSON.stringify(result));
       return res.status(response.status).json({ error: result });
     }
  
