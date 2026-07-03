@@ -145,70 +145,62 @@ async function resolveContatoId(contato, accessToken) {
   const documento = (contato.documento || '').replace(/\D/g, '');
   const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
  
-  if (documento) {
+  // Função auxiliar para buscar contato
+  async function buscarContato(params) {
     try {
-      // Busca por documento — sem filtro de situação para pegar ativos e inativos
-      const searchResp = await fetch(
-        `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}&limite=5`,
-        { headers }
-      );
-      const searchData = await searchResp.json();
-      // Pegar primeiro resultado independente do status
-      const found = searchData?.data?.[0];
-      if (found?.id) {
-        // Se inativo, reativar
-        if (found.situacao === 'I') {
-          await fetch(`https://www.bling.com.br/Api/v3/contatos/${found.id}`, {
-            method: 'PUT', headers,
-            body: JSON.stringify({ ...found, situacao: 'A' })
-          });
-        }
-        return found.id;
-      }
-      // Tentar busca alternativa por nome se não achou por documento
-      if (contato.nome) {
-        const nameResp = await fetch(
-          `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(contato.nome)}&limite=5`,
-          { headers }
-        );
-        const nameData = await nameResp.json();
-        // Procurar correspondência por documento
-        const byDoc = (nameData?.data || []).find(c =>
-          (c.numeroDocumento || '').replace(/\D/g, '') === documento
-        );
-        if (byDoc?.id) return byDoc.id;
-      }
-    } catch (e) { /* segue para criar */ }
+      const resp = await fetch(`https://www.bling.com.br/Api/v3/contatos?${params}&limite=10`, { headers });
+      const data = await resp.json();
+      return data?.data?.[0] || null;
+    } catch(e) { return null; }
   }
  
-  // Não encontrou: cria um contato novo
+  // Tentativa 1: busca por número de documento (sem máscara)
+  if (documento) {
+    const found = await buscarContato(`numeroDocumento=${documento}`);
+    if (found?.id) return found.id;
+  }
+ 
+  // Tentativa 2: busca por nome do contato
+  if (contato.nome) {
+    try {
+      const resp = await fetch(
+        `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(contato.nome)}&limite=20`,
+        { headers }
+      );
+      const data = await resp.json();
+      const lista = data?.data || [];
+      // Procura por documento coincidente
+      const porDoc = lista.find(c =>
+        documento && (c.numeroDocumento || '').replace(/\D/g, '') === documento
+      );
+      if (porDoc?.id) return porDoc.id;
+      // Se só tem um resultado, usa ele
+      if (lista.length === 1 && lista[0]?.id) return lista[0].id;
+    } catch(e) {}
+  }
+ 
+  // Tentativa 3: tentar criar o contato
   try {
     const tipoPessoa = documento.length > 11 ? 'J' : 'F';
-    const body = {
-      nome: contato.nome || 'Cliente sem nome',
-      tipoPessoa,
-      situacao: 'A'
-    };
+    const body = { nome: contato.nome || 'Cliente', tipoPessoa, situacao: 'A' };
     if (documento) body.numeroDocumento = documento;
     if (tipoPessoa === 'J' && contato.ie) body.ie = contato.ie;
  
     const createResp = await fetch('https://www.bling.com.br/Api/v3/contatos', {
-      method: 'POST', headers,
-      body: JSON.stringify(body)
+      method: 'POST', headers, body: JSON.stringify(body)
     });
     const createData = await createResp.json();
+ 
     if (createResp.ok && createData?.data?.id) return createData.data.id;
  
-    // Se falhou na criação, logar o motivo real
-    console.error('Falha ao criar contato no Bling:', JSON.stringify(createData));
- 
-    // Tentar busca sem documento como último recurso
+    // Se falhou por duplicidade, tentar buscar novamente (às vezes o Bling demora a indexar)
     if (documento) {
-      const retryResp = await fetch(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}&limite=5`, { headers });
-      const retryData = await retryResp.json();
-      const retryFound = retryData?.data?.[0];
-      if (retryFound?.id) return retryFound.id;
+      await new Promise(r => setTimeout(r, 500)); // aguardar 500ms
+      const retry = await buscarContato(`numeroDocumento=${documento}`);
+      if (retry?.id) return retry.id;
     }
+ 
+    console.error('Falha ao criar contato:', JSON.stringify(createData));
     return null;
   } catch (e) {
     console.error('Erro ao resolver contato:', e.message);
