@@ -147,10 +147,20 @@ async function resolveContatoId(contato, accessToken) {
  
   if (documento) {
     try {
-      const searchResp = await fetch(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}`, { headers });
+      // Busca por documento — aceita ativo ou inativo
+      const searchResp = await fetch(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}&limite=5`, { headers });
       const searchData = await searchResp.json();
       const found = searchData?.data?.[0];
-      if (found?.id) return found.id;
+      if (found?.id) {
+        // Se inativo, reativar antes de usar
+        if (found.situacao === 'I') {
+          await fetch(`https://www.bling.com.br/Api/v3/contatos/${found.id}`, {
+            method: 'PUT', headers,
+            body: JSON.stringify({ situacao: 'A' })
+          });
+        }
+        return found.id;
+      }
     } catch (e) { /* segue para criar */ }
   }
  
@@ -160,21 +170,31 @@ async function resolveContatoId(contato, accessToken) {
     const body = {
       nome: contato.nome || 'Cliente sem nome',
       tipoPessoa,
-      numeroDocumento: documento || undefined,
       situacao: 'A'
     };
-    if (tipoPessoa === 'J' && contato.ie) {
-      body.ie = contato.ie;
-    }
+    if (documento) body.numeroDocumento = documento;
+    if (tipoPessoa === 'J' && contato.ie) body.ie = contato.ie;
+ 
     const createResp = await fetch('https://www.bling.com.br/Api/v3/contatos', {
-      method: 'POST',
-      headers,
+      method: 'POST', headers,
       body: JSON.stringify(body)
     });
     const createData = await createResp.json();
     if (createResp.ok && createData?.data?.id) return createData.data.id;
+ 
+    // Se falhou na criação, logar o motivo real
+    console.error('Falha ao criar contato no Bling:', JSON.stringify(createData));
+ 
+    // Tentar busca sem documento como último recurso
+    if (documento) {
+      const retryResp = await fetch(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}&limite=5`, { headers });
+      const retryData = await retryResp.json();
+      const retryFound = retryData?.data?.[0];
+      if (retryFound?.id) return retryFound.id;
+    }
     return null;
   } catch (e) {
+    console.error('Erro ao resolver contato:', e.message);
     return null;
   }
 }
