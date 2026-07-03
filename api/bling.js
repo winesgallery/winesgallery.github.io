@@ -54,22 +54,41 @@ export default async function handler(req, res) {
     }
  
     // Resolver ID dos produtos pelo código antes de enviar
-    if (Array.isArray(payload?.itens) && payload.itens.length && endpoint.includes('/pedidos/vendas') || endpoint.includes('/orcamentos')) {
+    if (Array.isArray(payload?.itens) && payload.itens.length &&
+        (endpoint.includes('/pedidos/vendas') || endpoint.includes('/orcamentos'))) {
+      const blingHeaders = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
       for (const item of payload.itens) {
-        if (item.codigo && !item.id) {
+        if (item.codigo && !item.produto) {
           try {
-            const prodResp = await fetch(
+            // Tentativa 1: busca por código exato
+            let prod = null;
+            const resp1 = await fetch(
               `https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(item.codigo)}&limite=5`,
-              { headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+              { headers: blingHeaders }
             );
-            const prodData = await prodResp.json();
-            const prod = prodData?.data?.[0];
+            const data1 = await resp1.json();
+            prod = data1?.data?.[0];
+ 
+            // Tentativa 2: busca por descrição se não achou por código
+            if (!prod?.id && item.descricao) {
+              const resp2 = await fetch(
+                `https://www.bling.com.br/Api/v3/produtos?nome=${encodeURIComponent(item.descricao)}&limite=5`,
+                { headers: blingHeaders }
+              );
+              const data2 = await resp2.json();
+              prod = data2?.data?.[0];
+            }
+ 
             if (prod?.id) {
               item.produto = { id: prod.id };
               delete item.codigo;
               delete item.descricao;
+            } else {
+              console.warn(`Produto não encontrado no Bling: código=${item.codigo}, descrição=${item.descricao}`);
             }
-          } catch(e) { /* mantém codigo se falhar */ }
+          } catch(e) {
+            console.warn('Erro ao buscar produto:', item.codigo, e.message);
+          }
         }
       }
     }
