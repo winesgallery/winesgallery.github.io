@@ -53,6 +53,27 @@ export default async function handler(req, res) {
       }));
     }
  
+    // Resolver ID dos produtos pelo código antes de enviar
+    if (Array.isArray(payload?.itens) && payload.itens.length && endpoint.includes('/pedidos/vendas') || endpoint.includes('/orcamentos')) {
+      for (const item of payload.itens) {
+        if (item.codigo && !item.id) {
+          try {
+            const prodResp = await fetch(
+              `https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(item.codigo)}&limite=5`,
+              { headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+            );
+            const prodData = await prodResp.json();
+            const prod = prodData?.data?.[0];
+            if (prod?.id) {
+              item.produto = { id: prod.id };
+              delete item.codigo;
+              delete item.descricao;
+            }
+          } catch(e) { /* mantém codigo se falhar */ }
+        }
+      }
+    }
+ 
     console.log('PAYLOAD ENVIADO AO BLING:', JSON.stringify(payload));
  
     const response = await fetch(endpoint, {
