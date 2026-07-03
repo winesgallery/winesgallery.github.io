@@ -147,19 +147,36 @@ async function resolveContatoId(contato, accessToken) {
  
   if (documento) {
     try {
-      // Busca por documento — aceita ativo ou inativo
-      const searchResp = await fetch(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}&limite=5`, { headers });
+      // Busca por documento — sem filtro de situação para pegar ativos e inativos
+      const searchResp = await fetch(
+        `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${documento}&limite=5`,
+        { headers }
+      );
       const searchData = await searchResp.json();
+      // Pegar primeiro resultado independente do status
       const found = searchData?.data?.[0];
       if (found?.id) {
-        // Se inativo, reativar antes de usar
+        // Se inativo, reativar
         if (found.situacao === 'I') {
           await fetch(`https://www.bling.com.br/Api/v3/contatos/${found.id}`, {
             method: 'PUT', headers,
-            body: JSON.stringify({ situacao: 'A' })
+            body: JSON.stringify({ ...found, situacao: 'A' })
           });
         }
         return found.id;
+      }
+      // Tentar busca alternativa por nome se não achou por documento
+      if (contato.nome) {
+        const nameResp = await fetch(
+          `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(contato.nome)}&limite=5`,
+          { headers }
+        );
+        const nameData = await nameResp.json();
+        // Procurar correspondência por documento
+        const byDoc = (nameData?.data || []).find(c =>
+          (c.numeroDocumento || '').replace(/\D/g, '') === documento
+        );
+        if (byDoc?.id) return byDoc.id;
       }
     } catch (e) { /* segue para criar */ }
   }
