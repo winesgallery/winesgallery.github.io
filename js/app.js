@@ -1588,6 +1588,9 @@ function showPage(name){
   if(name==='amostras') initAmostras();
   if(name==='estoque')  initEstoque();
   if(name==='catalogo') renderCatalogo();
+  if(name==='pipeline')   renderPipeline();
+  if(name==='interacoes') renderInteracoes();
+  if(name==='tarefas')    renderTarefas();
 }
 function navNew(){editId=null;clearForm();showPage('new');}
 
@@ -3520,15 +3523,5 @@ function formatDate(d){return d.toLocaleDateString('pt-BR');}
 function showToast(msg,ok=false,info=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(ok?' ok':info?' info':'');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
-
-
-
-
-
-
-
-
-
-
 
 
