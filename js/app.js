@@ -1516,7 +1516,12 @@ async function doLogin(){
   document.getElementById('sdot').className='sdot ok';
   document.getElementById('slbl').textContent=viaDb?'Conectado · Supabase':'Modo local';
   audit('login','Login realizado');
-  // Mostrar menus imediatamente conforme papel (sem esperar sync)
+  // Mostrar menus de CRM (pipeline, interações, tarefas) — visíveis para todos
+  ['nav-pipeline','nav-interacoes','nav-tarefas'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display='flex';
+  });
+  // Mostrar menus administrativos conforme papel (sem esperar sync)
   aplicarMenusAdm();
   showPage('dash');
   // Em background: subir pedidos locais para Supabase e depois sincronizar
@@ -3523,5 +3528,3 @@ function formatDate(d){return d.toLocaleDateString('pt-BR');}
 function showToast(msg,ok=false,info=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(ok?' ok':info?' info':'');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
-
-
