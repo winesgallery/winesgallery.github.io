@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wine's Gallery — Sistema de Pedidos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --wine:#5C1A2E;--wine2:#7D2A44;--gold:#C9A96E;--gold-light:#E8D4A8;
+  --sand:#F5EDE3;--stripe:#EDE0D4;--cream:#FAF5F0;
+  --txt:#2C1A28;--txt-mid:#8A6070;--white:#FFFFFF;
+  --green:#2A6B3E;--red:#C0392B;--bling:#0070C0;--sw:245px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;background:var(--cream);color:var(--txt);min-height:100vh;}
+/* LOGIN */
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--wine);}
+.lbox{background:var(--cream);border-radius:12px;padding:44px 36px;width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+.llogo{font-size:24px;font-weight:bold;color:var(--wine);font-style:italic;font-family:Georgia,serif;margin-bottom:3px;}
+.lsub{font-size:10px;color:var(--txt-mid);margin-bottom:26px;letter-spacing:.5px;}
+.lf{width:100%;padding:10px 13px;border:1.5px solid var(--stripe);border-radius:6px;font-size:12px;background:var(--white);color:var(--txt);margin-bottom:11px;}
+.lf:focus{outline:none;border-color:var(--wine);}
+.lbtn{width:100%;padding:11px;background:var(--wine);color:var(--gold);border:none;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;letter-spacing:.4px;}
+.lbtn:hover{background:var(--wine2);}
+#lerr{color:var(--red);font-size:11px;margin-top:9px;display:none;}
+/* LAYOUT */
+#app{display:none;}
+.sidebar{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--wine);display:flex;flex-direction:column;z-index:100;overflow-y:auto;}
+.sb-logo{padding:13px 10px 9px;border-bottom:1px solid var(--wine2);}
+.sb-logo img{width:100%;max-width:175px;display:block;margin:0 auto;}
+.bsub{text-align:center;font-size:8px;color:var(--gold-light);letter-spacing:.5px;margin-top:4px;opacity:.7;}
+.sb-nav{flex:1;padding:12px 0;}
+.sb-sec{font-size:8px;font-weight:bold;color:var(--gold);letter-spacing:1.2px;padding:9px 16px 3px;opacity:.65;}
+.ni{display:flex;align-items:center;gap:8px;padding:10px 16px;color:var(--gold-light);font-size:12px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;}
+.ni:hover,.ni.active{background:var(--wine2);border-left-color:var(--gold);color:var(--white);}
+.ni svg{width:14px;height:14px;flex-shrink:0;}
+.sb-foot{padding:11px;border-top:1px solid var(--wine2);}
+.sb-user{font-size:10px;color:var(--txt-mid);margin-bottom:7px;}
+.rpill{display:inline-block;padding:1px 7px;border-radius:8px;font-size:9px;font-weight:bold;margin-left:4px;}
+.rp-a{background:var(--gold);color:var(--wine);}
+.rp-g{background:#1A3A5C;color:#90B8D4;}
+.rp-v{background:var(--stripe);color:var(--txt-mid);}
+.lo-btn{width:100%;padding:7px;background:transparent;border:1px solid var(--wine2);color:var(--txt-mid);border-radius:5px;font-size:11px;cursor:pointer;}
+.lo-btn:hover{background:var(--wine2);color:var(--white);}
+.main{margin-left:var(--sw);min-height:100vh;padding:0 0 60px;width:calc(100% - var(--sw));box-sizing:border-box;overflow-x:hidden;}
+.topbar{background:var(--wine);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:50px;border-bottom:3px solid var(--gold);}
+.topbar-t{color:var(--gold);font-size:14px;font-weight:bold;font-style:italic;font-family:Georgia,serif;}
+.topbar-s{color:var(--gold-light);font-size:8px;opacity:.75;margin-top:1px;}
+/* SUPA STATUS */
+.supa-bar{background:var(--sand);border-bottom:1px solid var(--stripe);padding:4px 24px;font-size:10px;color:var(--txt-mid);display:flex;align-items:center;gap:6px;}
+.sdot{width:7px;height:7px;border-radius:50%;background:#aaa;display:inline-block;}
+.sdot.ok{background:var(--green);}
+.sdot.err{background:var(--red);}
+/* PAGES */
+.page{display:none;padding:22px 26px;box-sizing:border-box;width:100%;min-width:0;}
+.tbl-scroll{overflow-x:auto;width:100%;}
+.page.active{display:block;}
+.ptitle{font-size:19px;color:var(--wine);font-style:italic;font-family:Georgia,serif;}
+.psub{font-size:11px;color:var(--txt-mid);margin-top:2px;}
+/* DASH */
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+.dc{background:var(--white);border-radius:8px;border:1px solid var(--stripe);padding:14px;text-align:center;}
+.dc.wine{background:var(--wine);border-color:var(--wine);}
+.dc-n{font-size:28px;font-weight:bold;color:var(--wine);display:block;font-family:Georgia,serif;}
+.dc.wine .dc-n{color:var(--gold);}
+.dc-l{font-size:9px;color:var(--txt-mid);margin-top:3px;letter-spacing:.3px;}
+.dc.wine .dc-l{color:var(--gold-light);}
+.dash-acts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
+.dbtn{padding:11px 20px;border:none;border-radius:7px;font-size:13px;font-weight:bold;cursor:pointer;display:flex;align-items:center;gap:7px;}
+.dbtn.p{background:var(--wine);color:var(--gold);}
+.dbtn.p:hover{background:var(--wine2);}
+.dbtn.s{background:var(--white);color:var(--wine);border:2px solid var(--wine);}
+.dbtn.s:hover{background:var(--sand);}
+.dash-sec-title{font-size:10px;font-weight:bold;color:var(--txt-mid);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid var(--gold);}
+/* Dashboard canal toggle */
+.canal-toggle{display:flex;gap:6px;align-items:center;}
+.ctog{padding:5px 14px;border:1.5px solid var(--stripe);border-radius:20px;font-size:11px;font-weight:bold;cursor:pointer;background:var(--white);color:var(--txt-mid);transition:all .15s;}
+.ctog.active-b2b{background:#FFF8EC;border-color:var(--gold);color:var(--wine);}
+.ctog.active-b2c{background:#EAF4ED;border-color:var(--green);color:var(--green);}
+.ctog.active-all{background:var(--wine);border-color:var(--wine);color:var(--gold);}
+/* Bling comparison bar */
+.bling-compare{background:var(--white);border-radius:8px;border:1px solid var(--stripe);padding:14px 16px;margin-bottom:18px;}
+.bc-title{font-size:10px;font-weight:bold;color:var(--txt-mid);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;}
+.bc-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.bc-row:last-child{margin-bottom:0;}
+.bc-label{font-size:11px;color:var(--txt-mid);width:120px;flex-shrink:0;}
+.bc-bar-wrap{flex:1;background:var(--stripe);border-radius:10px;height:12px;overflow:hidden;}
+.bc-bar{height:100%;border-radius:10px;transition:width .4s;}
+.bc-val{font-size:12px;font-weight:bold;width:32px;text-align:right;flex-shrink:0;}
+.bc-pct{font-size:10px;color:var(--txt-mid);width:38px;text-align:right;flex-shrink:0;}
+.vs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:18px;}
+.vs-card{background:var(--white);border-radius:8px;border:1px solid var(--stripe);padding:13px;}
+.vs-name{font-size:13px;font-weight:bold;color:var(--wine);margin-bottom:7px;}
+.vs-row{display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--stripe);}
+.vs-row:last-child{border-bottom:none;}
+/* SECTIONS */
+.sh{background:var(--wine);color:var(--gold);font-weight:bold;font-size:9.5px;letter-spacing:.7px;padding:8px 12px;border-radius:5px 5px 0 0;display:flex;align-items:center;justify-content:space-between;}
+.sb2{border:1px solid var(--stripe);border-top:none;border-radius:0 0 5px 5px;overflow:hidden;margin-bottom:15px;}
+/* FORM ROWS */
+.fr{display:flex;align-items:center;border-bottom:1px solid var(--stripe);}
+.fr:last-child{border-bottom:none;}
+.fr:nth-child(even){background:var(--stripe);}
+.fr:nth-child(odd){background:var(--sand);}
+.fl{width:145px;min-width:145px;padding:8px 10px;font-size:9px;font-weight:bold;color:var(--txt-mid);letter-spacing:.4px;text-transform:uppercase;}
+.fw{flex:1;padding:4px 10px;position:relative;}
+.fi,.fs{width:100%;padding:6px 9px;border:1.5px solid var(--stripe);border-radius:4px;font-size:12px;color:var(--txt);background:var(--white);}
+.fi:focus,.fs:focus{outline:none;border-color:var(--wine);}
+.fr.b2b-row{background:#FFF8EC;}
+.fr.b2c-row{background:#EAF4ED;}
+.bb2b{background:var(--gold);color:var(--wine);padding:2px 8px;border-radius:8px;font-size:9px;font-weight:bold;margin-left:5px;}
+.bb2c{background:var(--green);color:#fff;padding:2px 8px;border-radius:8px;font-size:9px;font-weight:bold;margin-left:5px;}
+/* AUTOCOMPLETE */
+.ac-wrap{position:relative;width:100%;}
+.ac-inp{width:100%;padding:6px 32px 6px 9px;border:1.5px solid var(--stripe);border-radius:4px;font-size:12px;color:var(--txt);background:var(--white);}
+.ac-inp:focus{outline:none;border-color:var(--wine);}
+.lupa{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:15px;cursor:pointer;color:var(--wine);padding:0;line-height:1;}
+.ac-drop{position:absolute;top:100%;left:0;right:0;background:var(--white);border:1.5px solid var(--wine);border-top:none;border-radius:0 0 5px 5px;z-index:300;max-height:190px;overflow-y:auto;box-shadow:0 4px 14px rgba(0,0,0,.12);}
+.ac-item{padding:7px 11px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--stripe);display:flex;justify-content:space-between;align-items:center;}
+.ac-item:hover{background:var(--sand);}
+.ac-nm{font-weight:bold;color:var(--txt);}
+.ac-sb{font-size:10px;color:var(--txt-mid);}
+/* EXTRA FIELDS */
+.add-field-row{background:var(--cream);padding:8px 12px;display:flex;align-items:center;gap:8px;border-top:1px dashed var(--stripe);}
+.ef-n{padding:5px 8px;border:1.5px solid var(--stripe);border-radius:4px;font-size:11px;width:130px;}
+.ef-v{flex:1;padding:5px 8px;border:1.5px solid var(--stripe);border-radius:4px;font-size:11px;}
+.btn-af{padding:5px 11px;background:var(--wine);color:var(--gold);border:none;border-radius:4px;font-size:10px;cursor:pointer;}
+.btn-rm{background:none;border:none;color:var(--txt-mid);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:3px;}
+.btn-rm:hover{background:#fee;color:var(--red);}
+/* ORDER TABLE */
+.ot-wrap{overflow-x:auto;}
+.ot{width:100%;border-collapse:collapse;font-size:11px;}
+.ot thead tr{background:var(--wine);}
+.ot thead th{padding:7px 5px;color:var(--gold);font-size:8.5px;font-weight:bold;letter-spacing:.4px;text-align:center;white-space:nowrap;}
+.ot thead th:first-child{text-align:left;padding-left:9px;}
+.ot tbody tr:nth-child(even){background:var(--stripe);}
+.ot tbody tr:nth-child(odd){background:var(--sand);}
+.ot tbody td{padding:4px 5px;vertical-align:middle;}
+.ot tbody td:first-child{padding-left:9px;}
+select.ws{width:100%;min-width:185px;padding:4px 6px;border:1px solid var(--stripe);border-radius:4px;font-size:11px;background:var(--white);color:var(--txt);}
+input.qi,input.ci,input.pi,input.ni2{width:100%;padding:4px 6px;border:1px solid var(--stripe);border-radius:4px;font-size:11px;text-align:center;background:var(--white);color:var(--txt);}
+input.ci,input.pi{background:var(--stripe);color:var(--txt-mid);pointer-events:none;}
+input.ni2{background:#FFF8EC;}
+input.qi:focus,input.ni2:focus{outline:none;border-color:var(--wine);}
+.tc{font-weight:bold;color:var(--wine);text-align:right;white-space:nowrap;padding-right:8px !important;}
+.add-item-row{padding:8px 12px;background:var(--cream);display:flex;gap:8px;align-items:center;border-top:1px dashed var(--stripe);}
+.btn-ai{padding:6px 13px;background:var(--wine);color:var(--gold);border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;}
+/* TOTALS */
+.tots{border:1px solid var(--stripe);border-top:none;border-radius:0 0 5px 5px;overflow:hidden;}
+.tr2{display:flex;justify-content:flex-end;align-items:center;padding:7px 13px;border-bottom:1px solid var(--stripe);font-size:11px;gap:16px;}
+.tr2:nth-child(even){background:var(--stripe);}
+.tr2:nth-child(odd){background:var(--sand);}
+.tr2.grand{background:var(--wine);padding:9px 13px;}
+.tr2.grand .tl{color:var(--white);font-size:10px;font-weight:bold;}
+.tr2.grand .tv{color:var(--gold);font-size:15px;font-weight:bold;}
+.tl{color:var(--txt-mid);font-weight:bold;font-size:10px;letter-spacing:.3px;}
+.tv{color:var(--txt);font-weight:bold;min-width:108px;text-align:right;}
+.frete-wrap{display:flex;align-items:center;gap:5px;}
+.ftog{display:flex;gap:4px;}
+.fb{padding:3px 8px;border:1px solid var(--stripe);border-radius:4px;font-size:10px;cursor:pointer;background:var(--white);color:var(--txt-mid);}
+.fb.active{background:var(--wine);color:var(--gold);border-color:var(--wine);}
+#frete-valor{width:82px;padding:3px 6px;border:1px solid var(--stripe);border-radius:4px;font-size:11px;display:none;}
+/* PAYMENT */
+.pmt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 10px;background:var(--sand);}
+.pf label{display:block;font-size:9px;font-weight:bold;color:var(--txt-mid);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;}
+.parc-list{padding:0 12px 10px;background:var(--sand);}
+.parc-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--stripe);font-size:11px;}
+.pn{width:82px;color:var(--wine);font-weight:bold;}
+/* STATUS */
+.sts-wrap{display:flex;gap:7px;}
+.so{flex:1;padding:8px;border:2px solid var(--stripe);border-radius:6px;text-align:center;cursor:pointer;font-size:11px;}
+.so.sel-e{border-color:var(--gold);background:#FFF8EC;color:var(--wine);font-weight:bold;}
+.so.sel-f{border-color:var(--green);background:#EAF4ED;color:var(--green);font-weight:bold;}
+/* BUTTONS */
+.act-bar{display:flex;gap:9px;margin-top:20px;flex-wrap:wrap;}
+.btn-wine{padding:10px 20px;background:var(--wine);color:var(--gold);border:none;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;}
+.btn-wine:hover{background:var(--wine2);}
+.btn-grn{padding:10px 20px;background:var(--green);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;}
+.btn-grn:hover{background:#1e5230;}
+.btn-blu{padding:10px 20px;background:var(--bling);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;}
+.btn-blu:disabled{background:#aaa;cursor:not-allowed;}
+.btn-clr{padding:10px 14px;background:var(--stripe);color:var(--txt-mid);border:none;border-radius:6px;font-size:12px;cursor:pointer;}
+.bsm{padding:4px 10px;border:none;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap;}
+.bsm-w{background:var(--wine);color:var(--gold);}
+.bsm-w:hover{background:var(--wine2);}
+.bsm-d{background:transparent;border:1px solid #ddd;color:var(--txt-mid);}
+.bsm-d:hover{background:#fee;color:var(--red);border-color:var(--red);}
+/* COMMENTS */
+.ci{padding:9px 13px;border-bottom:1px solid var(--stripe);font-size:12px;}
+.ci:nth-child(even){background:var(--stripe);}
+.ci:nth-child(odd){background:var(--sand);}
+.ci-hd{display:flex;align-items:center;gap:7px;margin-bottom:3px;}
+.ci-auth{font-weight:bold;color:var(--wine);font-size:11px;}
+.ci-date{color:var(--txt-mid);font-size:10px;margin-left:auto;}
+.c-wrap{padding:9px 11px;background:var(--cream);border-top:1px dashed var(--stripe);display:flex;gap:8px;align-items:flex-end;}
+.c-ta{flex:1;padding:7px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:12px;resize:vertical;min-height:54px;color:var(--txt);}
+.c-ta:focus{outline:none;border-color:var(--wine);}
+/* AUDIT */
+.ai{padding:8px 13px;border-bottom:1px solid var(--stripe);font-size:11px;display:flex;gap:10px;}
+.ai:nth-child(even){background:var(--stripe);}
+.ai:nth-child(odd){background:var(--sand);}
+.ai-info{flex:1;}
+.ai-what{font-weight:bold;color:var(--txt);}
+.ai-who{color:var(--txt-mid);font-size:10px;margin-top:2px;}
+.ai-time{color:var(--txt-mid);font-size:10px;white-space:nowrap;}
+/* LIST */
+.pc{background:var(--white);border-radius:7px;border:1px solid var(--stripe);padding:11px 14px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:8px;transition:box-shadow .15s;}
+.pc:hover{box-shadow:0 2px 8px rgba(92,26,46,.1);}
+.pi-name{font-size:13px;font-weight:bold;color:var(--txt);display:block;margin-bottom:2px;}
+.pi-sub{color:var(--txt-mid);font-size:10px;}
+.ps-e{background:#FFF8EC;color:var(--wine);border:1px solid var(--gold);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.ps-f{background:#EAF4ED;color:var(--green);border:1px solid var(--green);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.ps-x{background:#FEE;color:var(--red);border:1px solid var(--red);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.ps-b{background:#E8F4FF;color:var(--bling);border:1px solid var(--bling);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.p-total{font-weight:bold;color:var(--wine);font-size:13px;white-space:nowrap;}
+/* CLIENTES */
+.clc{background:var(--white);border-radius:7px;border:1px solid var(--stripe);padding:11px 14px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:8px;}
+.clc:hover{box-shadow:0 2px 8px rgba(92,26,46,.1);}
+.cl-name{font-size:13px;font-weight:bold;color:var(--txt);display:block;margin-bottom:2px;}
+.cl-sub{color:var(--txt-mid);font-size:10px;}
+.ba-s{background:#EAF4ED;color:var(--green);border:1px solid var(--green);padding:2px 9px;border-radius:10px;font-size:9px;font-weight:bold;}
+.ba-n{background:#f5f5f5;color:#999;border:1px solid #ddd;padding:2px 9px;border-radius:10px;font-size:9px;font-weight:bold;}
+/* FILTER BAR */
+.fbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+.fbar select,.fbar input{padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);}
+.tab-btn{padding:5px 13px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;cursor:pointer;background:var(--white);color:var(--txt-mid);}
+.tab-btn.active{background:var(--wine);color:var(--gold);border-color:var(--wine);}
+/* MODAL */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--cream);border-radius:10px;padding:22px;width:min(520px,95vw);box-shadow:0 20px 60px rgba(0,0,0,.4);max-height:92vh;overflow-y:auto;}
+.modal h3{color:var(--wine);font-size:15px;font-family:Georgia,serif;margin-bottom:12px;}
+.modal p{font-size:12px;color:var(--txt-mid);margin-bottom:14px;line-height:1.5;}
+.modal-btns{display:flex;gap:9px;justify-content:flex-end;margin-top:14px;}
+.mlbl{display:block;font-size:9px;font-weight:bold;color:var(--txt-mid);text-transform:uppercase;margin-bottom:3px;margin-top:9px;}
+.mfi{width:100%;padding:7px 9px;border:1.5px solid var(--stripe);border-radius:4px;font-size:12px;color:var(--txt);background:var(--white);}
+.mfi:focus{outline:none;border-color:var(--wine);}
+.bling-note{background:#E8F4FF;border:1px solid #b8d8f0;border-radius:6px;padding:11px;font-size:11px;color:#005499;line-height:1.5;margin-bottom:11px;}
+.user-card{background:var(--white);border-radius:7px;border:1px solid var(--stripe);padding:11px 14px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;}
+.u-name{font-size:13px;font-weight:bold;color:var(--txt);}
+.u-role{font-size:10px;color:var(--txt-mid);margin-top:2px;}
+.empty{text-align:center;padding:34px 20px;color:var(--txt-mid);}
+
+/* Pedidos excluídos — visualização e restauração */
+.restore-bar{background:#FFF8EC;border:1.5px dashed var(--gold);border-radius:7px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:10px;}
+.restore-msg{color:var(--wine);font-weight:bold;}
+.restore-sub{color:var(--txt-mid);font-size:10px;margin-top:2px;}
+/* Responsivo — mobile */
+@media(max-width:700px){
+  :root{--sw:0px;}
+  .sidebar{width:100%;height:auto;position:relative;flex-direction:row;flex-wrap:wrap;overflow:visible;}
+  .sb-logo{padding:8px 12px;flex:1;}
+  .sb-logo img{max-width:100px;}
+  .sb-nav{display:flex;flex-direction:row;flex-wrap:wrap;padding:4px 8px;width:100%;overflow-x:auto;}
+  .sb-sec{display:none;}
+  .ni{padding:7px 10px;border-left:none;border-bottom:3px solid transparent;font-size:11px;}
+  .ni:hover,.ni.active{border-bottom-color:var(--gold);border-left:none;}
+  .ni svg{display:none;}
+  .sb-foot{padding:6px 12px;width:100%;display:flex;align-items:center;justify-content:space-between;}
+  .sb-user{margin-bottom:0;font-size:9px;}
+  .main{margin-left:0;width:100%;}
+  .topbar{height:auto;padding:8px 14px;flex-direction:column;align-items:flex-start;gap:2px;}
+  .page{padding:14px 14px;}
+  .pmt-grid{grid-template-columns:1fr;}
+  .vs-grid{grid-template-columns:1fr;}
+  .dash-grid{grid-template-columns:repeat(3,1fr);}
+  .act-bar{gap:7px;}
+  .act-bar button{padding:9px 12px;font-size:11px;}
+  .modal{padding:16px;}
+  .dash-acts{flex-direction:column;}
+  .dbtn{width:100%;justify-content:center;}
+  .ot-wrap{-webkit-overflow-scrolling:touch;}
+  .filter-bar{gap:6px;}
+  .fbar select,.fbar input{font-size:10px;padding:4px 7px;}
+  .canal-toggle{gap:4px;}
+  .ctog{padding:4px 10px;font-size:10px;}
+}
+@media(max-width:420px){
+  .dash-grid{grid-template-columns:repeat(2,1fr);}
+}
+/* Email modal */
+.email-preview{background:var(--sand);border:1px solid var(--stripe);border-radius:6px;padding:12px;font-size:11px;line-height:1.7;color:var(--txt);margin-top:10px;max-height:200px;overflow-y:auto;white-space:pre-wrap;}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--wine);color:var(--gold);padding:10px 16px;border-radius:7px;font-size:12px;font-weight:bold;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.ok{background:var(--green);color:#fff;}
+.toast.info{background:var(--bling);color:#fff;}
+</style>
+</head>
+<body>
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="lbox">
+    <div class="llogo">Wine's Gallery</div>
+    <div class="lsub">SISTEMA INTERNO DE PEDIDOS</div>
+    <input class="lf" type="text" id="lu" placeholder="Usuário">
+    <input class="lf" type="password" id="lp" placeholder="Senha" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="lbtn" onclick="doLogin()">ENTRAR</button>
+    <div id="lerr">Usuário ou senha incorretos.</div>
+  </div>
+</div>
+
+<div id="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <img id="sb-logo" alt="Wine's Gallery">
+      <div class="bsub">MG IMPORTADORA E DISTRIBUIDORA</div>
+    </div>
+    <nav class="sb-nav">
+      <div class="sb-sec">VISÃO GERAL</div>
+      <div class="ni active" id="nav-dash" onclick="showPage('dash')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Pedidos
+      </div>
+      <div class="ni" id="nav-dash-vol" onclick="showPage('dash-vol')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Volumes e Bonificações
+      </div>
+      <div class="ni" id="nav-dash-com" onclick="showPage('dash-com')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Comissões
+      </div>
+      <div class="sb-sec">PEDIDOS</div>
+      <div class="ni" id="nav-new" onclick="navNew()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Novo Pedido
+      </div>
+      <div class="ni" id="nav-list" onclick="showPage('list')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/></svg>
+        <span id="nl-lbl">Meus Pedidos</span>
+      </div>
+      <div class="ni" id="nav-amostras" onclick="showPage('amostras')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg>Amostras <span id="badge-amostras" style="display:none;background:var(--wine);color:white;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:bold;"></span>
+      </div>
+      <div class="sb-sec">CLIENTES</div>
+      <div class="ni" id="nav-cli-new" onclick="openCliModal(null)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>Novo Cliente
+      </div>
+      <div class="ni" id="nav-pipeline" onclick="showPage('pipeline')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Pipeline de Vendas
+      </div>
+      <div class="ni" id="nav-interacoes" onclick="showPage('interacoes')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Interações
+      </div>
+      <div class="ni" id="nav-tarefas" onclick="showPage('tarefas')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Tarefas <span id="badge-tarefas" style="display:none;background:var(--red);color:white;font-size:9px;padding:1px 5px;border-radius:10px;margin-left:4px;"></span>
+      </div>
+      <div class="ni" id="nav-clientes" onclick="showPage('clientes')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Meus Clientes
+      </div>
+      <div class="sb-sec" id="sb-adm" style="display:none;">ADMINISTRAÇÃO</div>
+      <div class="ni" id="nav-aprovacoes" onclick="showPage('aprovacoes')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Aprovações <span id="nav-aprov-badge" style="display:none;background:var(--red);color:white;font-size:9px;font-weight:bold;border-radius:10px;padding:1px 6px;margin-left:4px;"></span>
+      </div>
+      <div class="ni" id="nav-audit" onclick="showPage('audit')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Log de Auditoria <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-bonificacao" onclick="showPage('bonificacao')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Bonificações <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-comissoes" onclick="showPage('comissoes')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Comissões <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-estoque" onclick="showPage('estoque')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3h-8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg>Estoque <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-catalogo" onclick="showPage('catalogo')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>Catálogo de Produtos <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-permissoes" onclick="showPage('permissoes')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Permissões <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-permissoes" onclick="showPage('permissoes')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Permissões de Menu <span class="rpill rp-a">ADM</span>
+      </div>
+      <div class="ni" id="nav-users" onclick="showPage('users')" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Usuários <span class="rpill rp-a">ADM</span>
+      </div>
+    </nav>
+    <div class="sb-foot">
+      <div class="sb-user" id="sb-user"></div>
+      <div style="font-size:9px;color:var(--txt-mid);margin-bottom:7px;"><span class="sdot" id="sdot"></span> <span id="slbl">Local</span></div>
+      <button class="lo-btn" onclick="doLogout()">Sair</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div><div class="topbar-t">Wine's Gallery</div><div class="topbar-s">Importadora de Vinhos Boutique e de Rótulos Exclusivos</div></div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div id="notif-bell" style="display:none;cursor:pointer;position:relative;" onclick="showPage('aprovacoes')" title="Aprovações pendentes">
+          <span style="font-size:18px;">🔔</span>
+          <span id="notif-badge" style="display:none;position:absolute;top:-4px;right:-6px;background:var(--red);color:white;font-size:9px;font-weight:bold;border-radius:10px;padding:1px 5px;min-width:16px;text-align:center;"></span>
+        </div>
+        <div style="font-size:11px;color:var(--gold-light);" id="tb-user"></div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD 1: PEDIDOS -->
+    <div class="page active" id="page-dash">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle" id="dash-title">Pedidos</div><div class="psub" id="dash-sub">Resumo dos pedidos</div></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="canal-toggle">
+            <button class="ctog active-all" id="ctog-all" onclick="setDashCanal('')">Todos</button>
+            <button class="ctog" id="ctog-b2b" onclick="setDashCanal('b2b')">B2B</button>
+            <button class="ctog" id="ctog-b2c" onclick="setDashCanal('b2c')">B2C</button>
+          </div>
+          <select id="dash-fstatus" onchange="renderDash()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+            <option value="">Todos os status</option>
+            <option value="espelho">Espelhos</option>
+            <option value="fechado">Fechados</option>
+            <option value="bling">No Bling</option>
+          </select>
+          <div id="dash-vf" style="display:none;">
+            <select id="dash-fv" onchange="renderDash()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+              <option value="">Todos os vendedores</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="dash-vs-wrap" style="display:none;margin-bottom:18px;">
+        <div class="dash-sec-title">Por Vendedor <span id="dash-vs-canal-label" style="font-weight:normal;color:var(--gold);"></span></div>
+        <div class="vs-grid" id="dash-vs"></div>
+      </div>
+      <div class="dash-sec-title" id="dash-nums-label">Meus Números</div>
+      <div class="dash-grid" id="dash-grid"></div>
+      <div class="bling-compare" id="dash-bling-compare">
+        <div class="bc-title">🔗 Integração Bling — Pedidos Fechados × Enviados ao Bling</div>
+        <div id="bc-rows"></div>
+      </div>
+      <div class="dash-acts">
+        <button class="dbtn p" onclick="navNew()">＋ Novo Pedido</button>
+        <button class="dbtn s" onclick="showPage('list')">📋 Gerenciar Pedidos</button>
+        <button class="dbtn s" onclick="openCliModal(null)">👤 Novo Cliente</button>
+      </div>
+      <div class="dash-sec-title">Últimos Pedidos</div>
+      <div id="dash-recent"></div>
+    </div>
+
+    <!-- DASHBOARD 2: VOLUMES E BONIFICAÇÕES -->
+    <div class="page" id="page-dash-vol">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Volumes e Bonificações</div><div class="psub">Análise por estabelecimento e apuração mensal</div></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <select id="vol-ano" onchange="renderDashVol()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);"></select>
+          <select id="vol-mes" onchange="renderDashVol()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);"></select>
+          <div class="canal-toggle">
+            <button class="ctog active-all" id="vtog-all" onclick="setVolCanal('',this)">Todos</button>
+            <button class="ctog" id="vtog-b2b" onclick="setVolCanal('b2b',this)">B2B</button>
+            <button class="ctog" id="vtog-b2c" onclick="setVolCanal('b2c',this)">B2C</button>
+          </div>
+          <select id="vol-bonif" onchange="renderDashVol()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+            <option value="">Todos os clientes</option>
+            <option value="aprovados">Aprovados no programa</option>
+            <option value="nao">Não aprovados</option>
+          </select>
+          <div id="vol-vf" style="display:none;">
+            <select id="vol-fv" onchange="renderDashVol()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+              <option value="">Todos os vendedores</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="dash-grid" id="vol-grid" style="margin-bottom:16px;"></div>
+      <div class="dash-sec-title">Estabelecimentos</div>
+      <div id="vol-estab-list"></div>
+    </div>
+
+    <!-- DASHBOARD 3: COMISSÕES -->
+    <div class="page" id="page-dash-com">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Comissões</div><div class="psub">Apuração por vendedor e calendário de pagamentos</div></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <select id="com-ano" onchange="renderDashCom()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);"></select>
+          <select id="com-mes" onchange="renderDashCom()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);"></select>
+          <select id="com-tipo-mes" onchange="renderDashCom()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+            <option value="faturamento">Mês de faturamento</option>
+            <option value="pagamento">Mês de pagamento</option>
+          </select>
+          <div class="canal-toggle">
+            <button class="ctog active-all" id="comtog-all" onclick="setComCanal('',this)">Todos</button>
+            <button class="ctog" id="comtog-b2b" onclick="setComCanal('b2b',this)">B2B</button>
+            <button class="ctog" id="comtog-b2c" onclick="setComCanal('b2c',this)">B2C</button>
+          </div>
+          <select id="com-status" onchange="renderDashCom()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+            <option value="">Todos os status</option>
+            <option value="pendente">A pagar</option>
+            <option value="pago">Pago</option>
+          </select>
+          <div id="com-vf" style="display:none;">
+            <select id="com-fv" onchange="renderDashCom()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+              <option value="">Todos</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="dash-grid" id="com-grid-totais" style="margin-bottom:16px;"></div>
+      <div id="com-corpo"></div>
+    </div>
+
+    <!-- LISTA DE PREÇOS -->
+    <div class="page" id="page-precos">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Lista de Preços <span class="rpill rp-a">ADM</span></div><div class="psub">Fonte oficial de preços B2B e B2C — sincronize com o Bling e gere os PDFs</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <div id="precos-sync-status" style="font-size:10px;color:var(--txt-mid);"></div>
+          <button class="bsm bsm-w" onclick="gerarPdfPrecos('b2b')">📄 PDF B2B</button>
+          <button class="bsm bsm-w" onclick="gerarPdfPrecos('b2c')">📄 PDF B2C</button>
+          <button class="bsm bsm-w" style="background:var(--gold-light);color:var(--wine);" onclick="syncBlingPrecos('b2b')">🔗 Sync B2B</button>
+          <button class="bsm bsm-w" style="background:var(--gold-light);color:var(--wine);" onclick="syncBlingPrecos('b2c')">🔗 Sync B2C</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--txt-mid);margin-bottom:12px;">Edite os preços diretamente na tabela. Clique 💾 para salvar linha por linha, ou use os botões de sync para atualizar uma tabela inteira no Bling de uma vez.</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr style="text-align:left;border-bottom:2px solid var(--stripe);">
+          <th style="padding:7px 6px;">Rótulo</th>
+          <th style="padding:7px 6px;">Safra</th>
+          <th style="padding:7px 6px;">Embalagem</th>
+          <th style="padding:7px 6px;">Cód. Bling</th>
+          <th style="padding:7px 6px;text-align:right;">Preço B2B</th>
+          <th style="padding:7px 6px;text-align:right;">Preço B2C</th>
+          <th style="padding:7px 6px;text-align:center;"></th>
+        </tr></thead>
+        <tbody id="precos-body"></tbody>
+      </table>
+    </div>
+
+    <!-- NOVO PEDIDO -->
+    <div class="page active" id="page-dash">
+      <!-- Cabeçalho com filtros -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle" id="dash-title">Meu Painel</div><div class="psub" id="dash-sub">Resumo dos seus pedidos</div></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="canal-toggle">
+            <button class="ctog active-all" id="ctog-all" onclick="setDashCanal('')">Todos</button>
+            <button class="ctog" id="ctog-b2b" onclick="setDashCanal('b2b')">B2B</button>
+            <button class="ctog" id="ctog-b2c" onclick="setDashCanal('b2c')">B2C</button>
+          </div>
+          <div id="dash-vf" style="display:none;">
+            <select id="dash-fv" onchange="renderDash()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;background:var(--white);">
+              <option value="">Todos os vendedores</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <!-- Cards por vendedor (admin/gerente apenas) -->
+      <div id="dash-vs-wrap" style="display:none;margin-bottom:18px;">
+        <div class="dash-sec-title">Por Vendedor <span id="dash-vs-canal-label" style="font-weight:normal;color:var(--gold);"></span></div>
+        <div class="vs-grid" id="dash-vs"></div>
+      </div>
+      <!-- Cards de números -->
+      <div class="dash-sec-title" id="dash-nums-label">Meus Números</div>
+      <div class="dash-grid" id="dash-grid"></div>
+      <!-- Barra comparativa Bling -->
+      <div class="bling-compare" id="dash-bling-compare">
+        <div class="bc-title">🔗 Integração Bling — Pedidos Fechados × Enviados ao Bling</div>
+        <div id="bc-rows"></div>
+      </div>
+      <div class="dash-acts">
+        <button class="dbtn p" onclick="navNew()">＋ Novo Pedido</button>
+        <button class="dbtn s" onclick="showPage('list')">📋 Gerenciar Pedidos</button>
+        <button class="dbtn s" onclick="openCliModal(null)">👤 Novo Cliente</button>
+      </div>
+      <div class="dash-sec-title">Últimos Pedidos</div>
+      <div id="dash-recent"></div>
+
+      <!-- SEÇÃO COMISSÕES DO VENDEDOR -->
+      <div id="dash-comissoes-section" style="margin-top:24px;display:none;">
+        <div class="dash-sec-title">💰 Minhas Comissões — <span id="dash-com-mes"></span></div>
+        <div id="dash-comissoes-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:12px;"></div>
+        <div id="dash-comissoes-cascata" style="display:none;">
+          <div class="dash-sec-title" style="font-size:12px;margin-top:16px;">🔗 Comissões Indiretas (cascata)</div>
+          <div id="dash-comissoes-cascata-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;"></div>
+        </div>
+      </div>
+
+      <!-- SEÇÃO ANÁLISE POR ESTABELECIMENTO (admin/gerente) -->
+      <div id="dash-estabelecimentos-section" style="margin-top:24px;display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div class="dash-sec-title" style="margin:0;">🏪 Análise por Estabelecimento</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="est-ano" onchange="renderEstabelecimentos()" style="padding:5px 8px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;"></select>
+            <select id="est-mes" onchange="renderEstabelecimentos()" style="padding:5px 8px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;"><option value="0">Todos os meses</option></select>
+          </div>
+        </div>
+        <div id="dash-estabelecimentos-list"></div>
+      </div>
+    </div>
+
+    <!-- NOVO PEDIDO -->
+    <div class="page" id="page-new">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle" id="form-title">Novo Pedido</div><div class="psub" id="form-sub">Preencha os dados e gere o espelho</div></div>
+        <div><div style="font-size:9px;color:var(--txt-mid);margin-bottom:3px;text-align:center;">STATUS</div>
+          <div class="sts-wrap"><div class="so sel-e" id="sts-e" onclick="setSts('espelho')">📋 Espelho</div><div class="so" id="sts-f" onclick="setSts('fechado')">✅ Fechado</div></div>
+        </div>
+      </div>
+      <!-- CLIENTE -->
+      <div class="sh">DADOS DO CLIENTE <span id="ct-badge"></span></div>
+      <div class="sb2">
+        <div class="fr"><div class="fl">Razão Social</div>
+          <div class="fw">
+            <div class="ac-wrap">
+              <input class="ac-inp" id="c-razao" type="text" placeholder="Nome ou Razão Social" oninput="onRazaoInput()" autocomplete="off">
+              <button class="lupa" onclick="buscarCliente()" title="Buscar cliente">🔍</button>
+              <div class="ac-drop" id="ac-drop" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="fr"><div class="fl">Nome Fantasia</div><div class="fw"><input class="fi" id="c-fantasia" type="text" placeholder="Opcional"></div></div>
+        <div class="fr b2b-row"><div class="fl">CNPJ <span style="font-size:8px;color:var(--gold);">→ B2B</span></div><div class="fw"><input class="fi" id="c-cnpj" type="text" placeholder="00.000.000/0000-00" oninput="onDoc('cnpj')" maxlength="18"></div></div>
+        <div class="fr b2b-row"><div class="fl">Inscrição Estadual</div><div class="fw"><input class="fi" id="c-ie" type="text" placeholder="Opcional ou ISENTO"></div></div>
+        <div class="fr b2c-row"><div class="fl">CPF <span style="font-size:8px;color:var(--green);">→ B2C</span></div><div class="fw"><input class="fi" id="c-cpf" type="text" placeholder="000.000.000-00" oninput="onDoc('cpf')" maxlength="14"></div></div>
+        <div class="fr"><div class="fl">Endereço</div><div class="fw"><input class="fi" id="c-end" type="text" placeholder="Rua, número, complemento"></div></div>
+        <div class="fr"><div class="fl">Cidade / UF</div><div class="fw"><input class="fi" id="c-cidade" type="text" placeholder="Cidade — UF"></div></div>
+        <div class="fr"><div class="fl">CEP</div><div class="fw"><input class="fi" id="c-cep" type="text" placeholder="00.000-000" maxlength="9"></div></div>
+        <div class="fr"><div class="fl">Telefone</div><div class="fw"><input class="fi" id="c-tel" type="text" placeholder="(00) 00000-0000"></div></div>
+        <div class="fr"><div class="fl">E-mail</div><div class="fw"><input class="fi" id="c-email" type="email" placeholder="email@empresa.com"></div></div>
+        <div class="fr"><div class="fl">Vendedor Resp.</div><div class="fw"><select class="fi" id="c-vendedor" style="font-size:12px;"><option value="">— Selecione —</option></select></div></div>
+        <div id="extra-fields"></div>
+        <div class="add-field-row"><input class="ef-n" id="ef-n" type="text" placeholder="Nome do campo"><input class="ef-v" id="ef-v" type="text" placeholder="Valor"><button class="btn-af" onclick="addField()">＋ Campo</button></div>
+      </div>
+      <!-- PEDIDO -->
+      <div class="sh">DADOS DO PEDIDO <span id="pt-ind" style="font-size:9px;font-weight:normal;color:var(--gold-light);"></span></div>
+      <div class="sb2">
+        <div class="ot-wrap"><table class="ot" id="ot">
+          <thead><tr><th style="text-align:left;padding-left:9px;min-width:190px;">RÓTULO</th><th style="min-width:52px;">SAFRA</th><th style="min-width:48px;">TIPO</th><th style="min-width:58px;">QTDE</th><th style="min-width:58px;">CAIXAS</th><th style="min-width:72px;">UNIT.</th><th style="min-width:72px;">NEG.</th><th style="min-width:82px;text-align:right;padding-right:8px;">TOTAL</th><th style="width:28px;"></th></tr></thead>
+          <tbody id="ot-body"></tbody>
+        </table></div>
+        <div class="add-item-row"><button class="btn-ai" onclick="addItem()">＋ Adicionar item</button><span style="font-size:10px;color:var(--txt-mid);">Selecione o vinho e informe a quantidade</span></div>
+      </div>
+      <div class="tots">
+        <div class="tr2"><span class="tl">SUBTOTAL PRODUTOS</span><span class="tv" id="t-sub">R$ 0,00</span></div>
+        <div class="tr2"><span class="tl">FRETE</span>
+          <div class="frete-wrap"><div class="ftog"><button class="fb active" id="fb-d" onclick="setFrete('definir')">A definir</button><button class="fb" id="fb-i" onclick="setFrete('incluso')">Incluso</button><button class="fb" id="fb-v" onclick="setFrete('valor')">Valor</button></div><input type="number" id="frete-valor" min="0" step="0.01" placeholder="0,00" oninput="calcTots()"></div>
+          <span class="tv" id="t-frete">—</span></div>
+        <div class="tr2 grand"><span class="tl">TOTAL GERAL</span><span class="tv" id="t-geral">R$ 0,00</span></div>
+      </div>
+      <!-- FATURAMENTO -->
+      <div class="sh" style="margin-top:16px;">DADOS DE FATURAMENTO</div>
+      <div class="sb2">
+        <div class="pmt-grid">
+          <div class="pf"><label>Data de Faturamento</label><input class="fi" type="date" id="f-data" onchange="calcParc()"></div>
+          <div class="pf"><label>Forma de Pagamento</label><select class="fs" id="f-forma" onchange="calcParc()"><option value="">Selecione...</option><option value="pix">PIX</option><option value="transferencia">Transferência Bancária</option><option value="boleto">Boleto</option></select></div>
+          <div class="pf"><label>Número de Parcelas</label><select class="fs" id="f-parc" onchange="calcParc()"><option value="1">1× (à vista)</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="6">6×</option></select></div>
+          <div class="pf"><label>Prazos em dias (ex: 14, 28)</label><input class="fi" type="text" id="f-prazos" placeholder="ex: 14, 28" oninput="calcParc()"></div>
+        </div>
+        <div class="parc-list" id="parc-list"><div style="font-size:10px;color:var(--txt-mid);padding:7px 0;">Preencha data e forma de pagamento.</div></div>
+      </div>
+      <!-- COMENTÁRIOS -->
+      <div class="sh" style="margin-top:16px;">COMENTÁRIOS <span style="font-size:9px;font-weight:normal;color:var(--gold-light);">Visível para gerentes e admins</span></div>
+      <div class="sb2"><div id="comments-list"><div style="font-size:10px;color:var(--txt-mid);padding:9px 13px;">Nenhum comentário ainda.</div></div><div class="c-wrap"><textarea class="c-ta" id="c-ta" placeholder="Deixe um comentário para o vendedor..."></textarea><button class="btn-wine" style="padding:7px 14px;font-size:11px;" onclick="addComment()">Enviar</button></div></div>
+      <!-- AÇÕES -->
+      <div class="act-bar">
+        <button class="btn-wine" onclick="gerarPDF()">📄 Gerar PDF</button>
+        <button class="btn-grn" onclick="salvar()">💾 Salvar</button>
+        <button style="padding:10px 20px;background:#6C3483;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;" id="btn-email" onclick="openEmailModal()" disabled title="Salve primeiro">📧 Enviar E-mail</button>
+        <button class="btn-blu" id="btn-bling" onclick="openBlingModal()" disabled title="Salve primeiro">🔗 Enviar ao Bling</button>
+        <button class="btn-clr" onclick="navNew()">✕ Limpar</button>
+      </div>
+      <div style="font-size:10px;color:var(--txt-mid);margin-top:6px;" id="bling-msg"></div>
+    </div>
+
+    <!-- LISTA PEDIDOS -->
+    <div class="page" id="page-list">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div><div class="ptitle" id="list-title">Meus Pedidos</div><div class="psub" id="list-sub">Seus espelhos e pedidos fechados</div></div>
+        <button class="btn-wine" onclick="navNew()">＋ Novo Pedido</button>
+      </div>
+      <div id="list-tabs" style="display:none;margin-bottom:10px;"><div style="display:flex;gap:7px;"><button class="tab-btn active" id="tab-ativos" onclick="setTab('ativos')">Ativos</button><button class="tab-btn" id="tab-excluidos" onclick="setTab('excluidos')">🗑 Excluídos</button></div></div>
+      <div class="fbar">
+        <div id="vf-wrap" style="display:none;"><select id="filter-vendor" onchange="renderList()"><option value="">Todos os vendedores</option></select></div>
+        <select id="filter-canal" onchange="renderList()"><option value="">B2B + B2C</option><option value="b2b">B2B</option><option value="b2c">B2C</option></select>
+        <select id="filter-status" onchange="renderList()"><option value="">Todos</option><option value="espelho">Espelho</option><option value="fechado">Fechado</option><option value="bling">Bling</option></select>
+        <input type="text" id="filter-search" placeholder="Buscar cliente..." oninput="renderList()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;">
+      </div>
+      <div id="list-container"></div>
+    </div>
+
+    <!-- CLIENTES -->
+    <div class="page" id="page-clientes">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div><div class="ptitle">Meus Clientes</div><div class="psub">Cadastro de clientes B2B e B2C</div></div>
+        <button class="btn-wine" onclick="openCliModal(null)">＋ Novo Cliente</button>
+      </div>
+      <div class="fbar">
+        <select id="clf-tipo" onchange="renderClientes()"><option value="">B2B + B2C</option><option value="B2B">B2B</option><option value="B2C">B2C</option></select>
+        <select id="clf-ativo" onchange="renderClientes()"><option value="">Todos</option><option value="1">Ativos</option><option value="0">Inativos</option></select>
+        <input type="text" id="clf-search" placeholder="Buscar..." oninput="renderClientes()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;">
+      </div>
+      <div id="clientes-container"></div>
+    </div>
+
+    <!-- AUDITORIA -->
+    <div class="page" id="page-audit">
+      <div style="margin-bottom:14px;"><div class="ptitle">Log de Auditoria <span class="rpill rp-a">ADM</span></div><div class="psub">Histórico completo de todas as ações</div></div>
+      <div class="fbar">
+        <select id="afu" onchange="renderAudit()"><option value="">Todos os usuários</option></select>
+        <select id="afa" onchange="renderAudit()"><option value="">Todas as ações</option><option value="criar">Criar</option><option value="editar">Editar</option><option value="excluir">Excluir</option><option value="comentario">Comentário</option><option value="bling">Bling</option><option value="pdf">PDF</option><option value="login">Login</option></select>
+        <input type="text" id="afs" placeholder="Buscar..." oninput="renderAudit()" style="padding:5px 9px;border:1.5px solid var(--stripe);border-radius:5px;font-size:11px;">
+        <button class="btn-clr" onclick="if(confirm('Limpar todo o log?')){localStorage.removeItem('wg_audit');renderAudit();}">🗑</button>
+      </div>
+      <div class="sh">REGISTRO DE AÇÕES</div>
+      <div class="sb2" id="audit-list" style="max-height:580px;overflow-y:auto;"></div>
+    </div>
+
+    <!-- APROVAÇÕES -->
+    <div class="page" id="page-aprovacoes">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Aprovações Pendentes</div><div class="psub">Amostras e bonificações aguardando sua aprovação</div></div>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--stripe);">
+        <button id="aprov-tab-amostras" onclick="setAprovTab('amostras')" style="padding:7px 16px;border:none;border-bottom:3px solid var(--wine);background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--wine);">🍷 Amostras <span id="aprov-cnt-amostras" style="background:var(--red);color:white;font-size:9px;padding:1px 6px;border-radius:10px;margin-left:4px;display:none;"></span></button>
+        <button id="aprov-tab-bonif" onclick="setAprovTab('bonif')" style="padding:7px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--txt-mid);">🎁 Bonificações <span id="aprov-cnt-bonif" style="background:var(--red);color:white;font-size:9px;padding:1px 6px;border-radius:10px;margin-left:4px;display:none;"></span></button>
+        <button id="aprov-tab-hist" onclick="setAprovTab('hist')" style="padding:7px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--txt-mid);">📋 Histórico</button>
+      </div>
+      <div id="aprovacoes-content"></div>
+    </div>
+
+    <!-- PERMISSÕES DE MENU -->
+    <div class="page" id="page-permissoes">
+      <div style="margin-bottom:14px;"><div class="ptitle">Permissões de Menu <span class="rpill rp-a">ADM</span></div><div class="psub">Defina quais menus da seção Administração cada usuário pode acessar</div></div>
+      <div style="font-size:11px;color:var(--txt-mid);margin-bottom:14px;padding:10px;background:var(--cream);border-radius:8px;">
+        ℹ️ Por padrão todos os menus de Administração são visíveis <strong>somente para o Admin</strong>. Marque as opções abaixo para liberar acesso a outros usuários.
+      </div>
+      <div id="permissoes-content"></div>
+    </div>
+
+    <!-- BONIFICAÇÃO B2B -->
+    <div class="page" id="page-bonificacao">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <div><div class="ptitle">Bonificações <span class="rpill rp-a">ADM</span></div><div class="psub">Programa de bonificação para estabelecimentos B2B parceiros</div></div>
+        <div style="display:flex;gap:6px;">
+          <button id="bon-canal-b2b" onclick="setBonCanal('b2b',this)" style="padding:5px 14px;border-radius:20px;border:1.5px solid var(--wine);background:var(--wine);color:var(--gold);font-size:11px;font-weight:bold;cursor:pointer;">B2B</button>
+          <button id="bon-canal-b2c" onclick="setBonCanal('b2c',this)" style="padding:5px 14px;border-radius:20px;border:1.5px solid var(--stripe);background:none;color:var(--txt-mid);font-size:11px;font-weight:bold;cursor:pointer;">B2C <span style="font-size:9px;">(em breve)</span></button>
+        </div>
+      </div>
+
+      <!-- B2B -->
+      <div id="bon-b2b-tabs">
+        <div style="display:flex;gap:2px;margin-bottom:14px;border-bottom:2px solid var(--stripe);flex-wrap:wrap;">
+          <button id="btab-solicitar"  onclick="setBonTab('solicitar')"  style="padding:7px 14px;border:none;border-bottom:3px solid var(--wine);background:none;cursor:pointer;font-size:11px;font-weight:bold;color:var(--wine);">➕ Solicitar</button>
+          <button id="btab-aprov-pen" onclick="setBonTab('aprov-pen')" style="padding:7px 14px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:11px;font-weight:bold;color:var(--txt-mid);">⏳ Pendentes</button>
+          <button id="btab-cnpjs"     onclick="setBonTab('cnpjs')"     style="padding:7px 14px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:11px;font-weight:bold;color:var(--txt-mid);">✅ Aprovados</button>
+          <button id="btab-apurado"   onclick="setBonTab('apurado')"   style="padding:7px 14px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:11px;font-weight:bold;color:var(--txt-mid);">📊 Apuração</button>
+          <button id="btab-historico" onclick="setBonTab('historico')" style="padding:7px 14px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:11px;font-weight:bold;color:var(--txt-mid);">📋 Histórico</button>
+        </div>
+
+        <!-- ═══ ABA SOLICITAR ═══ -->
+        <div id="btab-content-solicitar" style="display:block;">
+          <!-- PARTE 1: Buscar cliente B2B -->
+          <div style="background:var(--cream);border-radius:10px;padding:14px;margin-bottom:14px;">
+            <div style="font-size:12px;font-weight:bold;color:var(--wine);margin-bottom:10px;">1. Estabelecimento</div>
+            <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+              <div style="flex:2;min-width:200px;">
+                <label class="mlbl">Buscar cliente B2B cadastrado</label>
+                <div class="ac-wrap" style="position:relative;">
+                  <input class="fi" id="bon-cli-busca" type="text" placeholder="Digite nome ou CNPJ..." oninput="buscarClienteBon()" autocomplete="off" style="font-size:12px;">
+                  <div id="bon-cli-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--stripe);border-radius:0 0 6px 6px;z-index:200;max-height:180px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);"></div>
+                </div>
+              </div>
+              <div style="flex:1;min-width:140px;">
+                <label class="mlbl">CNPJ</label>
+                <input class="fi" id="bon-cli-cnpj" type="text" readonly style="background:var(--cream);font-size:12px;">
+              </div>
+              <div style="flex:2;min-width:180px;">
+                <label class="mlbl">Razão Social</label>
+                <input class="fi" id="bon-cli-razao" type="text" readonly style="background:var(--cream);font-size:12px;">
+              </div>
+            </div>
+          </div>
+
+          <!-- PARTE 2: Tipo e Steps -->
+          <div style="background:var(--cream);border-radius:10px;padding:14px;margin-bottom:14px;">
+            <div style="font-size:12px;font-weight:bold;color:var(--wine);margin-bottom:10px;">2. Modelo de bonificação</div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+              <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;background:var(--wine);color:var(--gold);border-radius:20px;font-weight:bold;" id="bon-tipo-btn-garrafas">
+                <input type="radio" name="bon-tipo" value="garrafas" id="bon-tipo-garrafas" onchange="updateBonTipo()" checked style="accent-color:var(--gold);"> 🍷 Somente Garrafas
+              </label>
+              <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;background:white;border:1.5px solid var(--stripe);border-radius:20px;font-weight:bold;" id="bon-tipo-btn-monetario">
+                <input type="radio" name="bon-tipo" value="monetario" id="bon-tipo-monetario" onchange="updateBonTipo()" style="accent-color:var(--wine);"> 💰 Somente Monetário
+              </label>
+              <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;background:white;border:1.5px solid var(--stripe);border-radius:20px;font-weight:bold;" id="bon-tipo-btn-ambos">
+                <input type="radio" name="bon-tipo" value="ambos" id="bon-tipo-ambos" onchange="updateBonTipo()" style="accent-color:var(--wine);"> 🍷💰 Garrafas + Monetário
+              </label>
+            </div>
+            <div class="tbl-scroll">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:480px;">
+                <thead><tr style="background:var(--wine);color:var(--gold);">
+                  <th style="padding:7px 8px;text-align:center;">Step</th>
+                  <th style="padding:7px 8px;text-align:center;">Mín. garrafas/mês</th>
+                  <th style="padding:7px 8px;text-align:center;" id="bon-col-garrafas">Garrafas bônus</th>
+                  <th style="padding:7px 8px;text-align:center;" id="bon-col-credito">Crédito R$</th>
+                </tr></thead>
+                <tbody id="bon-steps-tbody"></tbody>
+              </table>
+            </div>
+            <div style="font-size:10px;color:var(--txt-mid);margin-top:6px;">⚠️ Cada step deve ter volume mínimo maior que o anterior. Campos deixados em branco usam o padrão do programa.</div>
+          </div>
+
+          <!-- PARTE 3: Vigência -->
+          <div style="background:var(--cream);border-radius:10px;padding:14px;margin-bottom:14px;">
+            <div style="font-size:12px;font-weight:bold;color:var(--wine);margin-bottom:10px;">3. Vigência do acordo</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;flex-wrap:wrap;">
+              <div><label class="mlbl">Mês/Ano de início</label>
+                <input class="fi" id="bon-vig-inicio" type="month" onchange="calcVigencia()" style="font-size:12px;">
+              </div>
+              <div><label class="mlbl">Duração (meses)</label>
+                <select class="fi" id="bon-vig-meses" onchange="calcVigencia()" style="font-size:12px;">
+                  <option value="3">3 meses</option>
+                  <option value="6">6 meses</option>
+                  <option value="12" selected>12 meses</option>
+                  <option value="24">24 meses</option>
+                  <option value="36">36 meses</option>
+                </select>
+              </div>
+              <div><label class="mlbl">Término</label>
+                <input class="fi" id="bon-vig-fim" type="month" readonly style="background:var(--cream);font-size:12px;">
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="btn-wine" id="btn-submeter-bonif" onclick="submeterBonificacao()">📤 Enviar para Aprovação</button>
+            <div id="bon-sol-info" style="font-size:11px;color:var(--txt-mid);"></div>
+          </div>
+        </div>
+
+        <!-- ═══ ABA PENDENTES ═══ -->
+        <div id="btab-content-aprov-pen" style="display:none;">
+          <div id="bon-aprov-pen-list"></div>
+        </div>
+
+        <!-- ═══ ABA APROVADOS ═══ -->
+        <div id="btab-content-cnpjs" style="display:none;">
+          <div id="bon-cnpjs-list"></div>
+        </div>
+
+        <!-- ═══ ABA APURAÇÃO ═══ -->
+        <div id="btab-content-apurado" style="display:none;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <select id="bon-mes" class="fi" onchange="renderApuracao()" style="width:auto;font-size:12px;"></select>
+            <select id="bon-ano" class="fi" onchange="renderApuracao()" style="width:auto;font-size:12px;"></select>
+            <button class="bsm bsm-w" onclick="gerarRelatorioMensal()">📄 Gerar PDF</button>
+          </div>
+          <div id="bon-apurado-list"></div>
+        </div>
+
+        <!-- ═══ ABA HISTÓRICO ═══ -->
+        <div id="btab-content-historico" style="display:none;">
+          <div id="bon-historico-list"></div>
+        </div>
+      </div>
+
+      <!-- B2C placeholder -->
+      <div id="bon-b2c-content" style="display:none;padding:40px;text-align:center;color:var(--txt-mid);">
+        <div style="font-size:40px;margin-bottom:14px;">🚧</div>
+        <div style="font-size:14px;font-weight:bold;color:var(--wine);">Bonificações B2C em construção</div>
+        <div style="font-size:12px;margin-top:8px;">Cashback, códigos de desconto e campanhas. Estrutura detalhada em breve.</div>
+      </div>
+    </div>
+
+    <!-- MODAL DETALHES BONIF -->
+    <div class="modal-bg" id="modal-bon-detalhe"><div class="modal" style="max-width:580px;width:95vw;">
+      <h3 id="mbd-title">Detalhes da Bonificação</h3>
+      <div id="mbd-body" style="font-size:12px;max-height:65vh;overflow-y:auto;"></div>
+      <div class="modal-btns" id="mbd-btns"><button class="btn-clr" onclick="closeModal('modal-bon-detalhe')">Fechar</button></div>
+    </div></div>
+        <!-- COMISSÕES -->
+    <div class="page" id="page-comissoes">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div><div class="ptitle">Comissões <span class="rpill rp-a">ADM</span></div><div class="psub">Metas, regras e cálculo automático de comissões</div></div>
+      </div>
+      <!-- Abas -->
+      <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--stripe);">
+        <button id="ctab-metas"    onclick="setCTab('metas')"   style="padding:7px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--txt-mid);">📅 Metas</button>
+        <button id="ctab-regras"   onclick="setCTab('regras')"  style="padding:7px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--txt-mid);">💰 Regras Próprias</button>
+        <button id="ctab-cascata"  onclick="setCTab('cascata')" style="padding:7px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--txt-mid);">🔗 Cascata</button>
+        <button id="ctab-painel"   onclick="setCTab('painel')"  style="padding:7px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:12px;font-weight:bold;color:var(--txt-mid);">📊 Painel</button>
+      </div>
+      <!-- ABA METAS -->
+      <div id="ctab-content-metas">
+        <div style="font-size:11px;color:var(--txt-mid);margin-bottom:10px;">Meta mensal de vendas por vendedor e por canal. Pode variar mês a mês. Deixe em branco para meses sem meta definida.</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+          <select id="meta-ano" onchange="renderMetas()" style="padding:6px 10px;border:1.5px solid var(--stripe);border-radius:5px;font-size:12px;"></select>
+          <select id="meta-user" onchange="renderMetas()" style="padding:6px 10px;border:1.5px solid var(--stripe);border-radius:5px;font-size:12px;"></select>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--stripe);">
+            <th style="padding:7px 6px;">Mês</th>
+            <th style="padding:7px 6px;">Meta B2B (R$)</th>
+            <th style="padding:7px 6px;">Meta B2C (R$)</th>
+            <th style="padding:7px 6px;"></th>
+          </tr></thead>
+          <tbody id="metas-body"></tbody>
+        </table>
+      </div>
+      <!-- ABA REGRAS PRÓPRIAS -->
+      <div id="ctab-content-regras" style="display:none;">
+        <div style="font-size:11px;color:var(--txt-mid);margin-bottom:10px;">Percentual de comissão de cada pessoa sobre as próprias vendas. Separe por canal (B2B/B2C) e por situação de meta.</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="border-bottom:2px solid var(--stripe);">
+            <th style="padding:7px 6px;">Usuário</th>
+            <th style="padding:7px 6px;">B2B &lt;meta</th>
+            <th style="padding:7px 6px;">B2B ≥meta</th>
+            <th style="padding:7px 6px;">B2C &lt;meta</th>
+            <th style="padding:7px 6px;">B2C ≥meta</th>
+            <th style="padding:7px 6px;"></th>
+          </tr></thead>
+          <tbody id="regras-body"></tbody>
+        </table>
+      </div>
+      <!-- ABA CASCATA -->
+      <div id="ctab-content-cascata" style="display:none;">
+        <div style="font-size:11px;color:var(--txt-mid);margin-bottom:10px;">Quanto um supervisor (coordenador/gerente) ganha sobre as vendas de quem reporta para ele. O % é decidido pelo status de meta <strong>do vendedor que vendeu</strong>.</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="border-bottom:2px solid var(--stripe);">
+            <th style="padding:7px 6px;">Supervisor</th>
+            <th style="padding:7px 6px;">Sobre vendas de</th>
+            <th style="padding:7px 6px;">Se vendedor &lt;meta</th>
+            <th style="padding:7px 6px;">Se vendedor ≥meta</th>
+            <th style="padding:7px 6px;"></th>
+          </tr></thead>
+          <tbody id="cascata-body"></tbody>
+        </table>
+        <button class="btn-wine" style="margin-top:12px;" onclick="openNovaCascata()">＋ Nova Regra de Cascata</button>
+        <div id="modal-cascata-inline" style="display:none;margin-top:12px;padding:14px;background:var(--cream);border-radius:8px;border:1.5px solid var(--stripe);">
+          <div style="font-size:12px;font-weight:bold;margin-bottom:10px;">Nova Regra de Cascata</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div><label style="font-size:10px;color:var(--txt-mid);">Supervisor</label><select class="fi" id="casc-sup" style="font-size:12px;"></select></div>
+            <div><label style="font-size:10px;color:var(--txt-mid);">Sobre vendas de</label><select class="fi" id="casc-papel" style="font-size:12px;"><option value="vendedor">Vendedores</option><option value="coordenador">Coordenadores</option></select></div>
+            <div><label style="font-size:10px;color:var(--txt-mid);">% se vendedor abaixo da meta</label><input class="fi" id="casc-abaixo" type="number" min="0" max="100" step="0.01" placeholder="0.00" style="font-size:12px;"></div>
+            <div><label style="font-size:10px;color:var(--txt-mid);">% se vendedor acima da meta</label><input class="fi" id="casc-acima" type="number" min="0" max="100" step="0.01" placeholder="0.00" style="font-size:12px;"></div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-grn" onclick="saveCascata()">Salvar</button>
+            <button class="btn-clr" onclick="document.getElementById('modal-cascata-inline').style.display='none'">Cancelar</button>
+          </div>
+        </div>
+      </div>
+      <!-- ABA PAINEL -->
+      <div id="ctab-content-painel" style="display:none;">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+          <select id="painel-ano"  onchange="renderPainelComissoes()" style="padding:6px 10px;border:1.5px solid var(--stripe);border-radius:5px;font-size:12px;"></select>
+          <select id="painel-mes"  onchange="renderPainelComissoes()" style="padding:6px 10px;border:1.5px solid var(--stripe);border-radius:5px;font-size:12px;"></select>
+          <select id="painel-user" onchange="renderPainelComissoes()" style="padding:6px 10px;border:1.5px solid var(--stripe);border-radius:5px;font-size:12px;"><option value="">Todos</option></select>
+          <button class="bsm bsm-w" onclick="recalcularTodasComissoes()" title="Regerar comissões de todos os pedidos fechados e enviados ao Bling (retroativo)">🔄 Recalcular retroativo</button>
+        </div>
+        <div id="painel-comissoes-body"></div>
+      </div>
+    </div>
+
+    <!-- AMOSTRAS -->
+    <div class="page" id="page-amostras">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Pedidos de Amostras</div><div class="psub">Solicitações de degustação — sujeitas a aprovação</div></div>
+        <button class="btn-wine" onclick="openNovaAmostra()">＋ Nova Solicitação</button>
+      </div>
+      <!-- Abas de filtro -->
+      <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:2px solid var(--stripe);">
+        <button class="ctog active-all" id="atab-todas" onclick="setAmostraTab('todas',this)">Todas</button>
+        <button class="ctog" id="atab-pendentes" onclick="setAmostraTab('pendentes',this)">⏳ Pendentes</button>
+        <button class="ctog" id="atab-aprovadas" onclick="setAmostraTab('aprovadas',this)">✅ Aprovadas</button>
+        <button class="ctog" id="atab-recusadas" onclick="setAmostraTab('recusadas',this)">❌ Recusadas</button>
+      </div>
+      <div id="amostras-list"></div>
+    </div>
+
+    <!-- MODAL NOVA AMOSTRA -->
+    <div class="modal-bg" id="modal-amostra"><div class="modal" style="max-width:560px;">
+      <h3>🍷 Nova Solicitação de Amostras</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div style="grid-column:span 2;"><label class="mlbl">Nome do Estabelecimento</label><input class="mfi" id="am-nome" type="text" placeholder="Restaurante / Bar / Cliente"></div>
+        <div><label class="mlbl">CNPJ</label><input class="mfi" id="am-cnpj" type="text" placeholder="00.000.000/0001-00"></div>
+        <div><label class="mlbl">Data da Degustação</label><input class="mfi" id="am-data" type="date"></div>
+        <div style="grid-column:span 2;"><label class="mlbl">Endereço</label><input class="mfi" id="am-end" type="text" placeholder="Rua, número, cidade"></div>
+        <div style="grid-column:span 2;"><label class="mlbl">Observações</label><textarea class="mfi" id="am-obs" rows="2" placeholder="Motivo, contexto da degustação..."></textarea></div>
+      </div>
+      <div class="dash-sec-title" style="font-size:11px;margin-bottom:8px;">Produtos solicitados</div>
+      <div id="am-itens-wrap">
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;margin-bottom:6px;">
+          <select class="fi am-select" style="font-size:11px;padding:5px 6px;"></select>
+          <input type="number" class="fi am-qty" min="1" value="1" style="width:55px;font-size:11px;padding:5px 6px;" placeholder="Qtd">
+          <span class="am-valor" style="font-size:11px;color:var(--txt-mid);min-width:60px;text-align:right;">R$ —</span>
+          <button class="bsm bsm-d" onclick="removerLinhaAmostra(this)">✕</button>
+        </div>
+      </div>
+      <button class="bsm bsm-w" style="margin-bottom:10px;" onclick="addLinhaAmostra()">＋ Adicionar produto</button>
+      <div style="background:var(--cream);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--txt-mid);margin-bottom:10px;" id="am-regra-info"></div>
+      <div class="modal-btns">
+        <button class="btn-clr" onclick="closeModal('modal-amostra')">Cancelar</button>
+        <button class="btn-grn" onclick="salvarAmostra()">Enviar para Aprovação</button>
+      </div>
+    </div></div>
+
+    <!-- MODAL RECUSAR AMOSTRA -->
+    <div class="modal-bg" id="modal-recusar-amostra"><div class="modal" style="max-width:400px;">
+      <h3>❌ Recusar Solicitação</h3>
+      <label class="mlbl">Motivo da recusa</label>
+      <textarea class="mfi" id="recusa-motivo" rows="3" placeholder="Informe o motivo..."></textarea>
+      <div class="modal-btns">
+        <button class="btn-clr" onclick="closeModal('modal-recusar-amostra')">Cancelar</button>
+        <button class="btn-wine" onclick="confirmarRecusa()">Confirmar Recusa</button>
+      </div>
+    </div></div>
+
+    <!-- ESTOQUE -->
+    <div class="page" id="page-estoque">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Controle de Estoque <span class="rpill rp-a">ADM</span></div><div class="psub">Produtos e amostras — consumo automático por pedidos</div></div>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--stripe);">
+        <button class="ctog active-all" id="etab-prod" onclick="setEstoqueTab('produtos',this)">📦 Produtos</button>
+        <button class="ctog" id="etab-amostras" onclick="setEstoqueTab('amostras',this)">🍷 Amostras</button>
+        <button class="ctog" id="etab-mov" onclick="setEstoqueTab('movimentos',this)">📋 Movimentações</button>
+      </div>
+      <div id="estoque-content"></div>
+    </div>
+
+    <!-- CATÁLOGO DE PRODUTOS -->
+    <div class="page" id="page-catalogo">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="ptitle">Catálogo de Produtos <span class="rpill rp-a">ADM</span></div><div class="psub">Cadastro, preços B2B/B2C, códigos Bling e geração de listas</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button class="bsm bsm-w" onclick="openNovoProduto()">＋ Novo Produto</button>
+          <div style="width:1px;height:22px;background:var(--stripe);"></div>
+          <button class="bsm bsm-w" onclick="gerarPdfPrecos('b2b')">📄 PDF B2B</button>
+          <button class="bsm bsm-w" onclick="gerarPdfPrecos('b2c')">📄 PDF B2C</button>
+          <button class="bsm bsm-w" style="background:var(--gold-light);color:var(--wine);" onclick="syncBlingPrecos('b2b')">🔗 Sync B2B</button>
+          <button class="bsm bsm-w" style="background:var(--gold-light);color:var(--wine);" onclick="syncBlingPrecos('b2c')">🔗 Sync B2C</button>
+        </div>
+      </div>
+      <div id="cat-sync-status" style="font-size:10px;color:var(--txt-mid);margin-bottom:8px;white-space:pre-wrap;"></div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <button class="ctog active-all" id="cat-tog-ativos" onclick="setCatFiltro('ativos',this)">Ativos</button>
+        <button class="ctog" id="cat-tog-inativos" onclick="setCatFiltro('inativos',this)">Inativos</button>
+        <button class="ctog" id="cat-tog-todos" onclick="setCatFiltro('todos',this)">Todos</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr style="text-align:left;border-bottom:2px solid var(--stripe);">
+          <th style="padding:7px 6px;">Rótulo</th><th style="padding:7px 6px;">Safra</th>
+          <th style="padding:7px 6px;">Embal.</th><th style="padding:7px 6px;">Cód. Bling</th>
+          <th style="padding:7px 6px;text-align:right;">B2B</th><th style="padding:7px 6px;text-align:right;">B2C</th>
+          <th style="padding:7px 6px;text-align:center;">Status</th><th style="padding:7px 6px;"></th>
+        </tr></thead>
+        <tbody id="catalogo-body"></tbody>
+      </table>
+    </div>
+    <!-- MODAL PRODUTO -->
+    <div class="modal-bg" id="modal-produto"><div class="modal" style="max-width:480px;">
+      <h3 id="mp-title">Novo Produto</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div style="grid-column:span 2;"><label class="mlbl">Nome do Rótulo</label><input class="mfi" id="mp-nome" type="text" placeholder="ex: Lunea Malbec"></div>
+        <div><label class="mlbl">Marca</label><input class="mfi" id="mp-marca" type="text"></div>
+        <div><label class="mlbl">País</label><input class="mfi" id="mp-orig" type="text" placeholder="ARGENTINA ou CHILE"></div>
+        <div><label class="mlbl">Safra</label><input class="mfi" id="mp-safra" type="text"></div>
+        <div><label class="mlbl">Embalagem</label><input class="mfi" id="mp-embal" type="text" value="CX 6 un."></div>
+        <div><label class="mlbl">Código Bling</label><input class="mfi" id="mp-cod" type="text" placeholder="Código no Bling"></div>
+        <div><label class="mlbl">Preço B2B (R$)</label><input class="mfi" id="mp-b2b" type="number" min="0" step="0.01"></div>
+        <div><label class="mlbl">Preço B2C (R$)</label><input class="mfi" id="mp-b2c" type="number" min="0" step="0.01"></div>
+        <div style="grid-column:span 2;"><label class="mlbl">Disponibilidade</label>
+          <select class="mfi" id="mp-tipo-produto">
+            <option value="venda">🟢 Venda — aparece em pedidos e amostras</option>
+            <option value="pre_venda">🟡 Pré-venda — só no controle de estoque</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-produto')">Cancelar</button><button class="btn-grn" onclick="salvarProduto()">Salvar</button></div>
+    </div></div>
+
+    <!-- DE/PARA DE RÓTULOS -->
+    <div class="page" id="page-rotulos">
+      <div style="margin-bottom:14px;"><div class="ptitle">De/Para de Rótulos <span class="rpill rp-a">ADM</span></div><div class="psub">Liga o nome do vinho no sistema ao produto cadastrado no Bling</div></div>
+      <div style="font-size:11px;color:var(--txt-mid);margin-bottom:10px;">Preencha o <strong>código</strong> do produto no Bling para cada rótulo. Sem isso, o sistema tenta enviar pela descrição (pode falhar ou criar produto duplicado no Bling).</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="text-align:left;border-bottom:2px solid var(--stripe);"><th style="padding:8px 6px;">Rótulo (sistema)</th><th style="padding:8px 6px;">Código no Bling</th><th style="padding:8px 6px;">Nome exato no Bling</th><th style="padding:8px 6px;"></th></tr></thead>
+        <tbody id="rotulos-body"></tbody>
+      </table>
+    </div>
+
+    <!-- USUÁRIOS -->
+    <div class="page" id="page-users">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div><div class="ptitle">Gerenciar Usuários</div><div class="psub">Vendedores, gerentes e administradores</div></div>
+        <button class="btn-wine" onclick="openNewUser()">＋ Novo Usuário</button>
+      </div>
+      <div id="users-list"></div>
+      <!-- Configurações de e-mail -->
+      <div style="margin-top:24px;">
+        <div class="dash-sec-title">⚙️ Configurações de E-mail</div>
+        <div class="sb2" style="margin-top:0;">
+          <div class="fr"><div class="fl">E-mail Administrativo</div><div class="fw"><input class="fi" id="cfg-email-admin" type="email" placeholder="administrativo@winesgallery.com.br" oninput="saveCfg()"></div></div>
+          <div class="fr"><div class="fl">CC (cópia)</div><div class="fw"><input class="fi" id="cfg-email-cc" type="email" placeholder="outro@empresa.com (opcional)" oninput="saveCfg()"></div></div>
+          <div class="fr"><div class="fl">Assunto padrão</div><div class="fw"><input class="fi" id="cfg-email-subject" type="text" placeholder="Novo Pedido — {cliente} — {data}" oninput="saveCfg()"></div></div>
+        </div>
+        <div style="font-size:10px;color:var(--txt-mid);margin-top:6px;">As configurações são salvas automaticamente. O botão 📧 Enviar E-mail no formulário de pedido usará este endereço.</div>
+      </div>
+      <!-- Alçadas de aprovação de amostras -->
+      <div style="margin-top:24px;">
+        <div class="dash-sec-title">🍷 Alçadas de Aprovação — Amostras</div>
+        <div class="sb2" style="margin-top:0;">
+          <div class="fr">
+            <div class="fl">Alçada do Gerente</div>
+            <div class="fw" style="color:var(--txt-mid);font-size:11px;padding:10px 0;">Todas as solicitações dentro dos limites abaixo são aprovadas pelo gerente sem precisar de você.</div>
+          </div>
+          <div class="fr">
+            <div class="fl">Alçada do Admin <span style="font-size:9px;color:var(--gold);">(acima disso vai para você)</span></div>
+            <div class="fw" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:11px;color:var(--txt-mid);">Acima de</span>
+                <input class="fi" id="alcada-garrafas" type="number" min="1" value="3" style="width:70px;font-size:12px;text-align:center;">
+                <span style="font-size:11px;color:var(--txt-mid);">garrafas</span>
+              </div>
+              <span style="font-size:11px;color:var(--txt-mid);">OU</span>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:11px;color:var(--txt-mid);">Acima de R$</span>
+                <input class="fi" id="alcada-valor" type="number" min="0" step="10" value="300" style="width:90px;font-size:12px;text-align:center;">
+                <span style="font-size:11px;color:var(--txt-mid);">valor B2B</span>
+              </div>
+              <button class="bsm bsm-w" onclick="salvarAlcadas()">💾 Salvar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+  
+    <!-- PIPELINE DE VENDAS -->
+    <div class="page" id="page-pipeline">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div><div class="ptitle">Pipeline de Vendas</div><div class="psub">Funil de oportunidades B2B por etapa</div></div>
+      </div>
+      <div id="pipeline-content"></div>
+    </div>
+    <!-- INTERAÇÕES -->
+    <div class="page" id="page-interacoes">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div><div class="ptitle">Histórico de Interações</div><div class="psub">Ligações, visitas, e-mails e WhatsApp por cliente</div></div>
+        <button class="btn-wine" onclick="abrirNovaInteracao()">+ Registrar interação</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <select id="int-filtro-tipo" class="fi" onchange="renderInteracoes()" style="width:auto;font-size:12px;">
+          <option value="">Todos os tipos</option>
+          <option value="ligacao">📞 Ligação</option>
+          <option value="visita">🤝 Visita</option>
+          <option value="email">📧 E-mail</option>
+          <option value="whatsapp">💬 WhatsApp</option>
+          <option value="proposta">📄 Proposta</option>
+        </select>
+      </div>
+      <div id="interacoes-content"></div>
+    </div>
+    <!-- TAREFAS -->
+    <div class="page" id="page-tarefas">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div><div class="ptitle">Tarefas e Lembretes</div><div class="psub">Agenda da equipe comercial</div></div>
+        <button class="btn-wine" onclick="abrirNovaTarefa()">+ Nova tarefa</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <select id="trf-status" class="fi" onchange="renderTarefas()" style="width:auto;font-size:12px;">
+          <option value="pendente">Pendentes</option>
+          <option value="concluida">Concluídas</option>
+          <option value="todas">Todas</option>
+        </select>
+      </div>
+      <div id="tarefas-content"></div>
+    </div>
+</main>
+</div>
+
+<!-- MODAIS -->
+<div class="modal-bg" id="modal-del"><div class="modal"><h3>Excluir Pedido</h3><p>Este pedido será movido para excluídos. Somente o administrador poderá vê-lo. A ação fica registrada no log.</p><div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-del')">Cancelar</button><button style="padding:9px 18px;background:var(--red);color:#fff;border:none;border-radius:5px;font-size:12px;font-weight:bold;cursor:pointer;" onclick="confirmDel()">Excluir</button></div></div></div>
+
+<div class="modal-bg" id="modal-cli">
+  <div class="modal" style="width:min(580px,96vw);">
+    <h3 id="mc-title">Novo Cliente</h3>
+    <label class="mlbl">Razão Social *</label><input class="mfi" id="mc-razao" type="text" placeholder="Nome ou Razão Social">
+    <label class="mlbl">Nome Fantasia</label><input class="mfi" id="mc-fantasia" type="text" placeholder="Opcional">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label class="mlbl">CNPJ <span style="color:var(--gold);">→ B2B</span></label><input class="mfi" id="mc-cnpj" type="text" placeholder="00.000.000/0000-00" oninput="onCliDoc('cnpj')" maxlength="18"></div>
+      <div><label class="mlbl">Inscrição Estadual</label><input class="mfi" id="mc-ie" type="text" placeholder="Opcional ou ISENTO"></div>
+      <div><label class="mlbl">CPF <span style="color:var(--green);">→ B2C</span></label><input class="mfi" id="mc-cpf" type="text" placeholder="000.000.000-00" oninput="onCliDoc('cpf')" maxlength="14"></div>
+    </div>
+    <label class="mlbl">Endereço</label><input class="mfi" id="mc-end" type="text" placeholder="Rua, número, complemento">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
+      <div><label class="mlbl">Cidade / UF</label><input class="mfi" id="mc-cidade" type="text" placeholder="Cidade — UF"></div>
+      <div><label class="mlbl">CEP</label><input class="mfi" id="mc-cep" type="text" placeholder="00.000-000" maxlength="9"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label class="mlbl">Telefone</label><input class="mfi" id="mc-tel" type="text" placeholder="(00) 00000-0000"></div>
+      <div><label class="mlbl">E-mail</label><input class="mfi" id="mc-email" type="email" placeholder="email@empresa.com"></div>
+    </div>
+    <label class="mlbl">Status</label>
+    <div style="display:flex;gap:16px;margin:6px 0 10px;font-size:12px;">
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="mc-ativo" id="mc-ativo-s" value="1" checked> ✅ Ativo</label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="mc-ativo" id="mc-ativo-n" value="0"> ❌ Inativo</label>
+    </div>
+    <div style="font-size:11px;color:var(--txt-mid);margin-bottom:4px;">Tipo detectado: <span id="mc-tipo-badge" style="font-weight:bold;">—</span></div>
+    <div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-cli')">Cancelar</button><button class="btn-grn" onclick="saveCliente()" style="padding:9px 18px;">Salvar Cliente</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-user"><div class="modal"><h3 id="mu-title">Novo Usuário</h3><label class="mlbl">Nome completo</label><input class="mfi" id="mu-name" type="text" placeholder="Nome Sobrenome"><label class="mlbl">Login</label><input class="mfi" id="mu-user" type="text" placeholder="ex: wbraga"><label class="mlbl">Senha</label><input class="mfi" id="mu-pass" type="text" placeholder="ex: WB2026"><label class="mlbl">Perfil</label><select class="mfi" id="mu-role"><option value="vendedor">Vendedor</option><option value="coordenador">Coordenador</option><option value="gerente">Gerente</option><option value="admin">Administrador</option></select><label class="mlbl">Reporta para (organograma)</label><select class="mfi" id="mu-chefe"><option value="">— Ninguém (topo) —</option></select><div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-user')">Cancelar</button><button class="btn-grn" onclick="saveUser()" style="padding:9px 18px;">Salvar</button></div></div></div>
+
+<div class="modal-bg" id="modal-pwd"><div class="modal"><h3>Alterar Senha</h3><p id="pwd-lbl"></p><label class="mlbl">Nova Senha</label><input class="mfi" id="pwd-new" type="text" placeholder="Nova senha"><div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-pwd')">Cancelar</button><button class="btn-grn" onclick="savePwd()" style="padding:9px 18px;">Salvar</button></div></div></div>
+
+<div class="modal-bg" id="modal-bling"><div class="modal"><h3>🔗 Enviar ao Bling</h3><div class="bling-note"><strong>API Bling v3</strong> — A conexão com o Bling é automática (token gerenciado pelo sistema).<br><small>Se o Bling ainda não foi conectado, acesse <code>/api/bling-connect</code> uma vez para autorizar.</small></div><label class="mlbl">Ação</label><select class="mfi" id="bling-action"><option value="pedido_venda">Criar Pedido de Venda</option><option value="orcamento">Criar Orçamento</option></select><div id="bling-result" style="display:none;margin-top:9px;padding:9px;border-radius:5px;font-size:12px;"></div><div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-bling')">Cancelar</button><button class="btn-blu" id="bling-ok-btn" onclick="enviarBling()">Enviar ao Bling</button></div><p style="font-size:10px;color:var(--txt-mid);margin-top:10px;line-height:1.5;">⚠️ Se aparecer erro de autorização, acesse <code>/api/bling-connect</code> no navegador para reconectar.</p></div></div>
+
+
+<!-- MODAL RESTAURAR PEDIDO EXCLUÍDO -->
+<div class="modal-bg" id="modal-restore">
+  <div class="modal">
+    <h3>↩️ Restaurar Pedido</h3>
+    <p>Para quem este pedido será restaurado?</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;" id="restore-options">
+      <!-- preenchido dinamicamente -->
+    </div>
+    <div class="modal-btns">
+      <button class="btn-clr" onclick="closeModal('modal-restore')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL E-MAIL -->
+<div class="modal-bg" id="modal-email">
+  <div class="modal" style="width:min(600px,97vw);">
+    <h3>📧 Enviar Pedido por E-mail</h3>
+    <div style="margin-bottom:12px;">
+      <label class="mlbl">Para</label>
+      <input class="mfi" id="em-para" type="email" placeholder="cliente@empresa.com.br">
+      <label class="mlbl">CC (opcional)</label>
+      <input class="mfi" id="em-cc" type="email" placeholder="">
+      <label class="mlbl">Assunto</label>
+      <input class="mfi" id="em-subject" type="text">
+    </div>
+    <label class="mlbl">Prévia do corpo do e-mail</label>
+    <div class="email-preview" id="em-body-preview"></div>
+    <div id="em-status" style="font-size:11px;margin-top:8px;display:none;padding:8px;border-radius:5px;"></div>
+    <p style="font-size:10px;color:var(--txt-mid);margin-top:8px;line-height:1.5;">
+      📎 O PDF do pedido será gerado e anexado automaticamente ao e-mail.
+    </p>
+    <div class="modal-btns">
+      <button class="btn-clr" onclick="closeModal('modal-email')">Cancelar</button>
+      <button class="btn-grn" id="btn-enviar-email" onclick="enviarEmail()" style="padding:9px 18px;">📧 Enviar com PDF</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modal-pipeline"><div class="modal" style="max-width:520px;width:95vw;">
+  <h3>Oportunidade de Venda</h3>
+  <input type="hidden" id="pip-id">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div style="grid-column:span 2;"><label class="mlbl">Cliente</label>
+      <div style="position:relative;"><input class="fi" id="pip-cliente-busca" type="text" placeholder="Buscar cliente..." oninput="buscarClientePipeline()" autocomplete="off" style="font-size:12px;">
+      <input type="hidden" id="pip-cliente-id">
+      <div id="pip-cliente-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--stripe);border-radius:0 0 6px 6px;z-index:200;max-height:180px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);"></div></div>
+    </div>
+    <div><label class="mlbl">Etapa</label><select class="fi" id="pip-etapa" style="font-size:12px;"><option value="prospeccao">Prospecção</option><option value="qualificacao">Qualificação</option><option value="proposta">Proposta</option><option value="negociacao">Negociação</option><option value="fechado">Fechado ✅</option><option value="perdido">Perdido ❌</option></select></div>
+    <div><label class="mlbl">Vendedor</label><select class="fi" id="pip-vendedor" style="font-size:12px;"></select></div>
+    <div><label class="mlbl">Valor esperado (R$)</label><input class="fi" id="pip-valor" type="number" min="0" style="font-size:12px;"></div>
+    <div><label class="mlbl">Probabilidade (%)</label><input class="fi" id="pip-prob" type="number" min="0" max="100" style="font-size:12px;"></div>
+    <div style="grid-column:span 2;"><label class="mlbl">Observações</label><textarea class="fi" id="pip-obs" rows="2" style="font-size:12px;resize:vertical;"></textarea></div>
+  </div>
+  <div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-pipeline')">Cancelar</button><button class="btn-grn" onclick="salvarPipeline()">💾 Salvar</button></div>
+</div></div>
+
+<div class="modal-bg" id="modal-interacao"><div class="modal" style="max-width:500px;width:95vw;">
+  <h3>Registrar Interação</h3><input type="hidden" id="int-id">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div style="grid-column:span 2;"><label class="mlbl">Cliente</label>
+      <div style="position:relative;"><input class="fi" id="int-cliente-busca" type="text" placeholder="Buscar cliente..." oninput="buscarClienteInteracao()" autocomplete="off" style="font-size:12px;">
+      <input type="hidden" id="int-cliente-id">
+      <div id="int-cliente-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--stripe);border-radius:0 0 6px 6px;z-index:200;max-height:180px;overflow-y:auto;"></div></div>
+    </div>
+    <div><label class="mlbl">Tipo</label><select class="fi" id="int-tipo" style="font-size:12px;"><option value="ligacao">📞 Ligação</option><option value="visita">🤝 Visita</option><option value="email">📧 E-mail</option><option value="whatsapp">💬 WhatsApp</option><option value="proposta">📄 Proposta</option><option value="outro">📌 Outro</option></select></div>
+    <div><label class="mlbl">Data</label><input class="fi" id="int-data" type="date" style="font-size:12px;"></div>
+    <div style="grid-column:span 2;"><label class="mlbl">O que foi discutido</label><textarea class="fi" id="int-descricao" rows="2" placeholder="Descreva o que foi abordado..." style="font-size:12px;resize:vertical;"></textarea></div>
+    <div style="grid-column:span 2;"><label class="mlbl">Próximo passo</label><input class="fi" id="int-proximo" type="text" placeholder="Ex: Ligar na próxima semana" style="font-size:12px;"></div>
+  </div>
+  <div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-interacao')">Cancelar</button><button class="btn-grn" onclick="salvarInteracao()">💾 Salvar</button></div>
+</div></div>
+
+<div class="modal-bg" id="modal-tarefa"><div class="modal" style="max-width:480px;width:95vw;">
+  <h3>Tarefa / Lembrete</h3><input type="hidden" id="trf-id">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div style="grid-column:span 2;"><label class="mlbl">Título</label><input class="fi" id="trf-titulo" type="text" placeholder="Ex: Ligar para cliente X" style="font-size:12px;"></div>
+    <div style="grid-column:span 2;"><label class="mlbl">Cliente (opcional)</label>
+      <div style="position:relative;"><input class="fi" id="trf-cliente-busca" type="text" placeholder="Vincular a um cliente..." oninput="buscarClienteTarefa()" autocomplete="off" style="font-size:12px;">
+      <input type="hidden" id="trf-cliente-id">
+      <div id="trf-cliente-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--stripe);border-radius:0 0 6px 6px;z-index:200;max-height:160px;overflow-y:auto;"></div></div>
+    </div>
+    <div><label class="mlbl">Pedido (opcional)</label><input class="fi" id="trf-pedido" type="text" placeholder="PED-..." style="font-size:12px;"></div>
+    <div><label class="mlbl">Responsável</label><select class="fi" id="trf-responsavel" style="font-size:12px;"></select></div>
+    <div><label class="mlbl">Vencimento</label><input class="fi" id="trf-vencimento" type="date" style="font-size:12px;"></div>
+    <div><label class="mlbl">Prioridade</label><select class="fi" id="trf-prioridade" style="font-size:12px;"><option value="baixa">⬇️ Baixa</option><option value="normal" selected>➡️ Normal</option><option value="alta">⬆️ Alta</option></select></div>
+  </div>
+  <div class="modal-btns"><button class="btn-clr" onclick="closeModal('modal-tarefa')">Cancelar</button><button class="btn-grn" onclick="salvarTarefa()">💾 Salvar</button></div>
+</div></div>
+
+<!-- Código principal do sistema -->
+<script src="js/app.js"></script>
+<!-- Módulos de CRM (pipeline, interações, tarefas) -->
+<script src="js/pipeline.js"></script>
+<script src="js/interacoes.js"></script>
+<script src="js/tarefas.js"></script>
+</body>
+</html>
