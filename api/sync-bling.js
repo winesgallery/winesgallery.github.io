@@ -11,14 +11,12 @@ export default async function handler(req, res) {
   const CLIENT_ID     = process.env.BLING_CLIENT_ID;
   const CLIENT_SECRET = process.env.BLING_CLIENT_SECRET;
  
-  if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID || !CLIENT_SECRET) {
+  if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID || !CLIENT_SECRET)
     return res.status(500).json({ error: 'Variáveis de ambiente não configuradas' });
-  }
  
-  const { dataInicio = '2026-01-01', paginas = 10 } = req.body || req.query || {};
+  const { dataInicio = '2026-01-01', paginas = 50 } = req.body || req.query || {};
   const sleep = ms => new Promise(r => setTimeout(r, ms));
  
-  // ── fetchBling com retry ──
   async function fetchBling(url, options = {}, maxRetries = 4) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       if (attempt > 0) await sleep(1200 * attempt);
@@ -28,8 +26,7 @@ export default async function handler(req, res) {
     throw new Error('Rate limit persistente');
   }
  
-  // ── Supabase helpers ──
-  const sbHeaders = {
+  const sbH = {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,
     'Content-Type': 'application/json'
@@ -38,16 +35,15 @@ export default async function handler(req, res) {
   async function sbUpsert(table, data) {
     return fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: 'POST',
-      headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: { ...sbH, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(data)
     });
   }
  
-  // ── Obter access token ──
   async function getToken() {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/bling_tokens?id=eq.1&select=*`, { headers: sbHeaders });
+    const r    = await fetch(`${SUPABASE_URL}/rest/v1/bling_tokens?id=eq.1&select=*`, { headers: sbH });
     const rows = await r.json();
-    const row = rows?.[0];
+    const row  = rows?.[0];
     if (!row?.refresh_token) return null;
  
     const expired = Date.now() > (new Date(row.expires_at || 0).getTime() - 60000);
@@ -63,12 +59,12 @@ export default async function handler(req, res) {
     if (!rf.ok || !d.access_token) return null;
  
     await fetch(`${SUPABASE_URL}/rest/v1/bling_tokens?id=eq.1`, {
-      method: 'PATCH', headers: sbHeaders,
+      method: 'PATCH', headers: sbH,
       body: JSON.stringify({
-        access_token: d.access_token,
+        access_token:  d.access_token,
         refresh_token: d.refresh_token || row.refresh_token,
-        expires_at: new Date(Date.now() + (d.expires_in || 21600) * 1000).toISOString(),
-        updated_at: new Date().toISOString()
+        expires_at:    new Date(Date.now() + (d.expires_in || 21600) * 1000).toISOString(),
+        updated_at:    new Date().toISOString()
       })
     });
     return d.access_token;
@@ -78,138 +74,107 @@ export default async function handler(req, res) {
     const token = await getToken();
     if (!token) return res.status(401).json({ error: 'Bling não autorizado. Acesse /api/bling-connect.' });
  
-    const bHeaders = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const bH = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
  
-    // ── DIAGNÓSTICO: testar o endpoint primeiro ──
-    const testUrl = `https://www.bling.com.br/Api/v3/nfe?pagina=1&limite=10&dataEmissaoInicial=${dataInicio}`;
-    console.log('Testando endpoint:', testUrl);
- 
-    const testResp = await fetchBling(testUrl, { headers: bHeaders });
-    const testData = await testResp.json();
- 
-    console.log('Status HTTP:', testResp.status);
-    console.log('Resposta diagnóstico:', JSON.stringify(testData).substring(0, 500));
- 
-    // Se deu erro no endpoint, retornar diagnóstico
-    if (!testResp.ok) {
-      return res.status(200).json({
-        ok: false,
-        diagnostico: true,
-        status_http: testResp.status,
-        resposta_bling: testData,
-        mensagem: 'Endpoint NF retornou erro — veja resposta_bling para detalhes'
-      });
-    }
- 
-    const nfsTotal = testData?.data || [];
-    console.log(`Página de teste: ${nfsTotal.length} NFs, estrutura:`, JSON.stringify(nfsTotal[0] || {}).substring(0, 300));
- 
-    // Se veio 0 mesmo sem filtro de situação, testar pedidos de venda como fallback
-    if (nfsTotal.length === 0) {
-      // Tentar via pedidos de venda
-      const pedUrl = `https://www.bling.com.br/Api/v3/pedidos/vendas?pagina=1&limite=10&dataEmissaoInicial=${dataInicio}`;
-      const pedResp = await fetchBling(pedUrl, { headers: bHeaders });
-      const pedData = await pedResp.json();
- 
-      return res.status(200).json({
-        ok: false,
-        diagnostico: true,
-        nfe_encontradas: 0,
-        pedidos_venda_encontrados: (pedData?.data || []).length,
-        amostra_pedidos: (pedData?.data || []).slice(0,2),
-        mensagem: 'Nenhuma NF encontrada. Testando pedidos de venda como alternativa.'
-      });
-    }
- 
-    // ── Se encontrou NFs, processar todas as páginas ──
-    let totalImportadas = 0;
-    let totalAtualizadas = 0;
-    let erros = [];
-    let pagina = 1;
+    let totalImportadas = 0, totalAtualizadas = 0, totalEncontrados = 0;
+    let erros = [], pagina = 1;
     const maxPaginas = parseInt(paginas) || 10;
  
-    // Processar a página de teste
-    const todasNFs = [...nfsTotal];
+    while (pagina <= maxPaginas) {
+      await sleep(pagina > 1 ? 500 : 0);
  
-    // Buscar páginas restantes
-    while (pagina < maxPaginas) {
-      pagina++;
-      await sleep(500);
+      // NF-e autorizadas a partir da data de início
       const url = `https://www.bling.com.br/Api/v3/nfe?pagina=${pagina}&limite=100&dataEmissaoInicial=${dataInicio}`;
-      try {
-        const r = await fetchBling(url, { headers: bHeaders });
-        const d = await r.json();
-        const nfs = d?.data || [];
-        if (!nfs.length) break;
-        todasNFs.push(...nfs);
-      } catch(e) { erros.push(`Pág ${pagina}: ${e.message}`); break; }
-    }
+      console.log(`Buscando página ${pagina}`);
  
-    console.log(`Total NFs para processar: ${todasNFs.length}`);
+      let pageResp;
+      try { pageResp = await fetchBling(url, { headers: bH }); }
+      catch(e) { erros.push(`Pág ${pagina}: ${e.message}`); break; }
  
-    for (const nf of todasNFs) {
-      await sleep(300);
-      try {
-        // Buscar detalhes se necessário
-        let detalhe = nf;
-        if (!nf.itens && nf.id) {
-          try {
-            const dr = await fetchBling(`https://www.bling.com.br/Api/v3/nfe/${nf.id}`, { headers: bHeaders });
-            const dd = await dr.json();
-            detalhe = dd?.data || nf;
-            await sleep(300);
-          } catch(e) { console.warn('Detalhe falhou:', nf.id); }
-        }
+      const pageData = await pageResp.json();
  
-        const dataEmissao = (detalhe.dataEmissao || nf.dataEmissao || '').substring(0, 10);
-        const total = parseFloat(detalhe.totalProdutos || detalhe.valor || detalhe.total || nf.totalProdutos || nf.valor || 0);
-        const blingId = String(nf.id);
- 
-        // Verificar se já existe
-        const ex = await fetch(`${SUPABASE_URL}/rest/v1/pedidos?bling_id=eq.${blingId}&select=id,total,fat_data`, { headers: sbHeaders });
-        const exRows = await ex.json();
-        const jaExiste = exRows?.[0];
- 
-        const clienteJson = JSON.stringify({
-          razao: detalhe.contato?.nome || nf.contato?.nome || 'Importado do Bling',
-          cnpj: (detalhe.contato?.numeroDocumento || '').replace(/\D/g, ''),
-          tipo: detalhe.contato?.tipoPessoa === 'J' ? 'PJ' : 'PF'
+      if (!pageResp.ok) {
+        if (pagina === 1) return res.status(200).json({
+          ok: false, diagnostico: true,
+          status_http: pageResp.status,
+          resposta_bling: pageData,
+          mensagem: 'Erro ao buscar NFs.'
         });
- 
-        const itensJson = JSON.stringify((detalhe.itens || []).map(it => ({
-          nome: it.descricao || it.produto?.descricao || '—',
-          qty: it.quantidade || 1,
-          price: parseFloat(it.valor || 0),
-          safra: ''
-        })));
- 
-        if (jaExiste) {
-          if (jaExiste.fat_data !== dataEmissao || Math.abs((jaExiste.total||0) - total) > 0.01) {
-            await sbUpsert('pedidos', { id: jaExiste.id, fat_data: dataEmissao, total, updated_at: new Date().toISOString() });
-            totalAtualizadas++;
-          }
-        } else {
-          await sbUpsert('pedidos', {
-            id: `BLING-${blingId}`,
-            bling_id: blingId,
-            bling_sent_at: dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
-            status: 'fechado',
-            origem: 'bling_sync',
-            total,
-            data: dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
-            fat_data: dataEmissao,
-            fat_forma: '', fat_parcelas: 1, fat_prazos: '',
-            cliente_json: clienteJson,
-            itens_json: itensJson,
-            vendedor: '', vendedor_name: '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-          totalImportadas++;
-        }
-      } catch(e) {
-        erros.push(`NF ${nf.id}: ${e.message}`);
+        break;
       }
+ 
+      const nfs = pageData?.data || [];
+      console.log(`Página ${pagina}: ${nfs.length} NFs`);
+      if (!nfs.length) break;
+      totalEncontrados += nfs.length;
+ 
+      for (const nf of nfs) {
+        await sleep(300);
+        try {
+          // Buscar detalhes completos da NF
+          let detalhe = nf;
+          if (nf.id) {
+            try {
+              const dr = await fetchBling(`https://www.bling.com.br/Api/v3/nfe/${nf.id}`, { headers: bH });
+              const dd = await dr.json();
+              detalhe = dd?.data || nf;
+              await sleep(300);
+            } catch(e) { console.warn('Detalhe NF falhou:', nf.id); }
+          }
+ 
+          const blingId      = String(nf.id);
+          const dataEmissao  = (detalhe.dataEmissao || nf.dataEmissao || '').substring(0, 10);
+          const total        = parseFloat(detalhe.totalProdutos || detalhe.valor || nf.totalProdutos || 0);
+          const contato      = detalhe.contato || nf.contato || {};
+ 
+          const clienteJson = JSON.stringify({
+            razao: contato.nome || 'Importado do Bling',
+            cnpj:  (contato.numeroDocumento || '').replace(/\D/g, ''),
+            tipo:  contato.tipoPessoa === 'J' ? 'PJ' : 'PF'
+          });
+ 
+          const itensJson = JSON.stringify((detalhe.itens || []).map(it => ({
+            nome:  it.descricao || it.produto?.descricao || '—',
+            qty:   parseFloat(it.quantidade || 1),
+            price: parseFloat(it.valor || 0),
+            safra: ''
+          })));
+ 
+          // Verificar se já existe
+          const ex      = await fetch(`${SUPABASE_URL}/rest/v1/pedidos?bling_id=eq.${blingId}&select=id,total,fat_data`, { headers: sbH });
+          const exRows  = await ex.json();
+          const jaExiste = exRows?.[0];
+ 
+          if (jaExiste) {
+            if (jaExiste.fat_data !== dataEmissao || Math.abs((jaExiste.total || 0) - total) > 0.01) {
+              await sbUpsert('pedidos', { id: jaExiste.id, fat_data: dataEmissao, total, updated_at: new Date().toISOString() });
+              totalAtualizadas++;
+            }
+          } else {
+            await sbUpsert('pedidos', {
+              id:            `BLING-${blingId}`,
+              bling_id:      blingId,
+              bling_sent_at: dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
+              status:        'fechado',
+              origem:        'bling_sync',
+              total,
+              data:          dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
+              fat_data:      dataEmissao,
+              fat_forma:     '', fat_parcelas: 1, fat_prazos: '',
+              cliente_json:  clienteJson,
+              itens_json:    itensJson,
+              vendedor:      '', vendedor_name: '',
+              numero_bling:  String(detalhe.numero || nf.numero || ''),
+              created_at:    new Date().toISOString(),
+              updated_at:    new Date().toISOString()
+            });
+            totalImportadas++;
+          }
+        } catch(e) {
+          erros.push(`NF ${nf.id}: ${e.message}`);
+        }
+      }
+      pagina++;
     }
  
     // Log do sync
@@ -224,12 +189,12 @@ export default async function handler(req, res) {
       ok: true,
       importadas: totalImportadas,
       atualizadas: totalAtualizadas,
-      total_nfs_encontradas: todasNFs.length,
+      total_encontrados: totalEncontrados,
       erros: erros.length,
-      detalheErros: erros.slice(0,5)
+      detalheErros: erros.slice(0, 5)
     });
  
-  } catch (err) {
+  } catch(err) {
     console.error('SYNC ERRO:', err.message);
     return res.status(500).json({ error: err.message });
   }
