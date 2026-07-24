@@ -139,28 +139,27 @@ export default async function handler(req, res) {
           // Usar detalhe se disponível, senão lista mínima
           const src = detalhe || nf;
  
-          // ── Extrair campos com múltiplos nomes possíveis ──
-          const dataEmissao = (src.dataEmissao || src.data_emissao || src.data || '').substring(0, 10);
+          // ── Extrair campos — estrutura confirmada via debug ──
+          // dataEmissao vem como "2026-07-23 18:38:28" — pegar só data
+          const dataEmissao = (src.dataEmissao || '').substring(0, 10);
  
-          // Total: vários campos possíveis
-          const total = parseFloat(
-            src.totalProdutos || src.total_produtos ||
-            src.totalNota     || src.total_nota     ||
-            src.valor         || src.total          || 0
-          );
+          // Total: campo valorNota no detalhe da NF
+          const total = parseFloat(src.valorNota || src.totalProdutos || src.total || 0);
  
           // Contato
-          const contato = src.contato || src.cliente || {};
-          const nomeCliente = contato.nome || contato.razaoSocial || contato.razao_social || 'Importado do Bling';
-          const docCliente  = (contato.numeroDocumento || contato.numero_documento || contato.cpfCnpj || '').replace(/\D/g,'');
-          const tipoCliente = (docCliente.length > 11) ? 'PJ' : 'PF';
+          const contato = src.contato || {};
+          const nomeCliente = contato.nome || 'Importado do Bling';
+          const docCliente  = (contato.numeroDocumento || '').replace(/\D/g,'');
+          const tipoCliente = docCliente.length > 11 ? 'PJ' : 'PF';
  
-          // Itens
-          const itensRaw = src.itens || src.produtos || src.items || [];
+          // Itens: itens[].descricao, .quantidade, .valor (unitário), .codigo
+          const itensRaw = src.itens || [];
           const itens = itensRaw.map(it => ({
-            nome:  it.descricao || it.nome || (it.produto?.descricao) || '—',
-            qty:   parseFloat(it.quantidade || it.qty || 1),
-            price: parseFloat(it.valor || it.valorUnitario || it.price || 0),
+            nome:  it.descricao || '—',
+            cod:   it.codigo    || '',
+            qty:   parseFloat(it.quantidade || 1),
+            price: parseFloat(it.valor      || 0),
+            total: parseFloat(it.valorTotal || (it.quantidade * it.valor) || 0),
             safra: ''
           }));
  
