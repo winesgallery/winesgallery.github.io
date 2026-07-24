@@ -1,6 +1,4 @@
-// api/bling.js — Proxy Vercel para Bling API v3 (com OAuth2 automático)
-// O front-end não precisa mais enviar nenhum token; este arquivo
-// cuida de buscar, renovar e usar o token salvo no Supabase.
+// api/bling.js — Proxy Vercel para Bling API v3 (com OAuth2 + retry automático)
  
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,98 +7,145 @@ export default async function handler(req, res) {
  
   if (req.method === 'OPTIONS') return res.status(200).end();
  
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-  const CLIENT_ID = process.env.BLING_CLIENT_ID;
+  const SUPABASE_URL  = process.env.SUPABASE_URL;
+  const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY;
+  const CLIENT_ID     = process.env.BLING_CLIENT_ID;
   const CLIENT_SECRET = process.env.BLING_CLIENT_SECRET;
  
   if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID || !CLIENT_SECRET) {
     return res.status(500).json({ error: 'Variáveis de ambiente do Bling/Supabase não configuradas' });
   }
  
-  const { endpoint, payload } = req.body;
-  if (!endpoint) {
-    return res.status(400).json({ error: 'endpoint é obrigatório' });
+  const { endpoint, payload } = req.body || {};
+  if (!endpoint) return res.status(400).json({ error: 'endpoint é obrigatório' });
+ 
+  // ── Helper: sleep ──
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+ 
+  // ── Helper: fetch com retry automático para rate limit (429) ──
+  async function fetchBling(url, options, maxRetries = 4) {
+    let lastErr;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (attempt > 0) {
+        const wait = 1000 * attempt; // 1s, 2s, 3s
+        console.log(`Rate limit atingido — aguardando ${wait}ms antes da tentativa ${attempt + 1}...`);
+        await sleep(wait);
+      }
+      try {
+        const resp = await fetch(url, options);
+        // Rate limit → aguardar e tentar de novo
+        if (resp.status === 429) {
+          lastErr = new Error('rate_limit');
+          continue;
+        }
+        return resp;
+      } catch (e) {
+        lastErr = e;
+        if (attempt < maxRetries - 1) await sleep(500 * (attempt + 1));
+      }
+    }
+    throw lastErr || new Error('Máximo de tentativas atingido (rate limit)');
   }
  
   try {
-    const accessToken = await getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT_SECRET);
+    const accessToken = await getValidAccessToken(
+      SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT_SECRET, sleep
+    );
  
     if (!accessToken) {
-      return res.status(401).json({ error: 'Bling ainda não foi autorizado. Acesse /api/bling-connect para conectar.' });
+      return res.status(401).json({
+        error: 'Bling ainda não foi autorizado. Acesse /api/bling-connect para conectar.'
+      });
     }
  
-    // Para pedidos de venda e orçamentos, o Bling exige um contato.id válido.
-    // Se o payload veio só com nome/documento, resolve (busca ou cria) o contato primeiro.
-    if (payload?.contato && !payload.contato.id && (endpoint.includes('/pedidos/vendas') || endpoint.includes('/orcamentos'))) {
-      const contatoId = await resolveContatoId(payload.contato, accessToken);
+    const blingHeaders = {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    };
+ 
+    const isVendaOuOrc = endpoint.includes('/pedidos/vendas') || endpoint.includes('/orcamentos');
+ 
+    // ── 1. Resolver contato ──
+    if (payload?.contato && !payload.contato.id && isVendaOuOrc) {
+      const contatoId = await resolveContatoId(payload.contato, blingHeaders, fetchBling, sleep);
       if (!contatoId) {
-        return res.status(400).json({ error: { description: 'Não foi possível localizar nem cadastrar o contato no Bling. Verifique se o CNPJ/CPF do cliente está correto.' } });
+        return res.status(400).json({
+          error: { description: 'Não foi possível localizar nem cadastrar o contato no Bling. Verifique o CNPJ/CPF do cliente.' }
+        });
       }
       payload.contato = { id: contatoId };
+      await sleep(350); // pausa antes da próxima chamada
     }
  
-    // Resolve o ID da forma de pagamento (PIX/Boleto/Transferência) cadastrada no Bling
+    // ── 2. Resolver forma de pagamento ──
     if (Array.isArray(payload?.parcelas) && payload.parcelas.length) {
-      const formaPagamentoId = await resolveFormaPagamentoId(payload.parcelas[0].formaPagamentoTipo, accessToken);
+      const tipo = payload.parcelas[0].formaPagamentoTipo;
+      const formaPagamentoId = await resolveFormaPagamentoId(tipo, blingHeaders, fetchBling);
       if (!formaPagamentoId) {
-        return res.status(400).json({ error: { description: 'Não foi possível localizar uma forma de pagamento cadastrada no Bling. Cadastre formas de pagamento em Bling > Vendas > Formas de Pagamento.' } });
+        return res.status(400).json({
+          error: { description: 'Nenhuma forma de pagamento encontrada no Bling. Cadastre em Bling > Vendas > Formas de Pagamento.' }
+        });
       }
       payload.parcelas = payload.parcelas.map(p => ({
         valor: p.valor,
         dataVencimento: p.dataVencimento,
         formaPagamento: { id: formaPagamentoId }
       }));
+      await sleep(350);
     }
  
-    // Resolver ID dos produtos pelo código antes de enviar
-    if (Array.isArray(payload?.itens) && payload.itens.length &&
-        (endpoint.includes('/pedidos/vendas') || endpoint.includes('/orcamentos'))) {
-      const blingHeaders = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+    // ── 3. Resolver produtos (com delay entre cada item) ──
+    if (Array.isArray(payload?.itens) && payload.itens.length && isVendaOuOrc) {
       for (const item of payload.itens) {
         if (item.codigo && !item.produto) {
+          let prod = null;
+ 
+          // Busca por código
           try {
-            // Tentativa 1: busca por código exato
-            let prod = null;
-            const resp1 = await fetch(
+            const r1 = await fetchBling(
               `https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(item.codigo)}&limite=5`,
               { headers: blingHeaders }
             );
-            const data1 = await resp1.json();
-            prod = data1?.data?.[0];
+            const d1 = await r1.json();
+            prod = d1?.data?.[0];
+          } catch (e) {
+            console.warn('Erro busca produto por código:', e.message);
+          }
  
-            // Tentativa 2: busca por descrição se não achou por código
-            if (!prod?.id && item.descricao) {
-              const resp2 = await fetch(
+          // Busca por descrição se não achou por código
+          if (!prod?.id && item.descricao) {
+            await sleep(400); // pausa obrigatória entre buscas
+            try {
+              const r2 = await fetchBling(
                 `https://www.bling.com.br/Api/v3/produtos?nome=${encodeURIComponent(item.descricao)}&limite=5`,
                 { headers: blingHeaders }
               );
-              const data2 = await resp2.json();
-              prod = data2?.data?.[0];
+              const d2 = await r2.json();
+              prod = d2?.data?.[0];
+            } catch (e) {
+              console.warn('Erro busca produto por nome:', e.message);
             }
- 
-            if (prod?.id) {
-              item.produto = { id: prod.id };
-              delete item.codigo;
-              delete item.descricao;
-            } else {
-              console.warn(`Produto não encontrado no Bling: código=${item.codigo}, descrição=${item.descricao}`);
-            }
-          } catch(e) {
-            console.warn('Erro ao buscar produto:', item.codigo, e.message);
           }
+ 
+          if (prod?.id) {
+            item.produto = { id: prod.id };
+            delete item.codigo;
+            delete item.descricao;
+          } else {
+            console.warn(`Produto não encontrado: código=${item.codigo}`);
+          }
+ 
+          await sleep(400); // pausa entre itens
         }
       }
     }
  
+    // ── 4. Enviar pedido/orçamento ao Bling ──
     console.log('PAYLOAD ENVIADO AO BLING:', JSON.stringify(payload));
  
-    const response = await fetch(endpoint, {
+    const response = await fetchBling(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
+      headers: blingHeaders,
       body: JSON.stringify(payload)
     });
  
@@ -112,31 +157,37 @@ export default async function handler(req, res) {
     }
  
     return res.status(200).json(result);
+ 
   } catch (err) {
+    console.error('ERRO BLING HANDLER:', err.message);
     return res.status(500).json({ error: err.message });
   }
 }
  
-async function getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT_SECRET) {
+// ── OAuth: busca ou renova o access token ──
+async function getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT_SECRET, sleep) {
   const headers = {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,
     'Content-Type': 'application/json'
   };
  
-  const getResp = await fetch(`${SUPABASE_URL}/rest/v1/bling_tokens?id=eq.1&select=*`, { headers });
+  const getResp = await fetch(
+    `${SUPABASE_URL}/rest/v1/bling_tokens?id=eq.1&select=*`,
+    { headers }
+  );
   const rows = await getResp.json();
-  const row = rows?.[0];
+  const row  = rows?.[0];
  
-  if (!row || !row.refresh_token) return null;
+  if (!row?.refresh_token) return null;
  
   const expiresAt = row.expires_at ? new Date(row.expires_at).getTime() : 0;
-  const isExpired = Date.now() > (expiresAt - 60000); // renova com 1 min de folga
+  const isExpired  = Date.now() > (expiresAt - 60000);
  
   if (!isExpired) return row.access_token;
  
-  // Renovar usando o refresh_token
-  const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+  // Renovar token
+  const basicAuth   = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
   const refreshResp = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
     method: 'POST',
     headers: {
@@ -144,7 +195,7 @@ async function getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT
       'Authorization': `Basic ${basicAuth}`
     },
     body: new URLSearchParams({
-      grant_type: 'refresh_token',
+      grant_type:    'refresh_token',
       refresh_token: row.refresh_token
     })
   });
@@ -158,24 +209,27 @@ async function getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT
     method: 'PATCH',
     headers,
     body: JSON.stringify({
-      access_token: refreshData.access_token,
+      access_token:  refreshData.access_token,
       refresh_token: refreshData.refresh_token || row.refresh_token,
-      expires_at: newExpiresAt,
-      updated_at: new Date().toISOString()
+      expires_at:    newExpiresAt,
+      updated_at:    new Date().toISOString()
     })
   });
  
   return refreshData.access_token;
 }
  
-async function resolveFormaPagamentoId(tipo, accessToken) {
-  const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-  const keywords = { pix: 'pix', boleto: 'boleto', transferencia: 'transferência' };
-  const keyword = keywords[tipo] || tipo || '';
+// ── Resolver forma de pagamento pelo tipo ──
+async function resolveFormaPagamentoId(tipo, blingHeaders, fetchBling) {
+  const keywords = { pix: 'pix', boleto: 'boleto', transferencia: 'transferência', dinheiro: 'dinheiro' };
+  const keyword  = keywords[tipo] || tipo || '';
  
   try {
-    const resp = await fetch('https://www.bling.com.br/Api/v3/formas-pagamentos?limite=100', { headers });
-    const data = await resp.json();
+    const resp = await fetchBling(
+      'https://www.bling.com.br/Api/v3/formas-pagamentos?limite=100',
+      { headers: blingHeaders }
+    );
+    const data  = await resp.json();
     const lista = data?.data || [];
     if (!lista.length) return null;
     const match = lista.find(f => (f.descricao || '').toLowerCase().includes(keyword.toLowerCase()));
@@ -184,66 +238,68 @@ async function resolveFormaPagamentoId(tipo, accessToken) {
     return null;
   }
 }
-async function resolveContatoId(contato, accessToken) {
+ 
+// ── Resolver contato: busca por CNPJ/CPF ou nome, cria se não existir ──
+async function resolveContatoId(contato, blingHeaders, fetchBling, sleep) {
   const documento = (contato.documento || '').replace(/\D/g, '');
-  const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
  
-  // Função auxiliar para buscar contato
-  async function buscarContato(params) {
+  async function buscar(params) {
     try {
-      const resp = await fetch(`https://www.bling.com.br/Api/v3/contatos?${params}&limite=10`, { headers });
-      const data = await resp.json();
-      return data?.data?.[0] || null;
-    } catch(e) { return null; }
+      const r = await fetchBling(
+        `https://www.bling.com.br/Api/v3/contatos?${params}&limite=10`,
+        { headers: blingHeaders }
+      );
+      const d = await r.json();
+      return d?.data?.[0] || null;
+    } catch (e) { return null; }
   }
  
-  // Tentativa 1: busca por número de documento (sem máscara)
+  // 1. Por documento
   if (documento) {
-    const found = await buscarContato(`numeroDocumento=${documento}`);
+    const found = await buscar(`numeroDocumento=${documento}`);
     if (found?.id) return found.id;
+    await sleep(400);
   }
  
-  // Tentativa 2: busca por nome do contato
+  // 2. Por nome
   if (contato.nome) {
     try {
-      const resp = await fetch(
+      const r = await fetchBling(
         `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(contato.nome)}&limite=20`,
-        { headers }
+        { headers: blingHeaders }
       );
-      const data = await resp.json();
-      const lista = data?.data || [];
-      // Procura por documento coincidente
-      const porDoc = lista.find(c =>
-        documento && (c.numeroDocumento || '').replace(/\D/g, '') === documento
-      );
+      const d = await r.json();
+      const lista = d?.data || [];
+      const porDoc = lista.find(c => documento && (c.numeroDocumento || '').replace(/\D/g, '') === documento);
       if (porDoc?.id) return porDoc.id;
-      // Se só tem um resultado, usa ele
       if (lista.length === 1 && lista[0]?.id) return lista[0].id;
-    } catch(e) {}
+    } catch (e) {}
+    await sleep(400);
   }
  
-  // Tentativa 3: tentar criar o contato
+  // 3. Criar contato
   try {
     const tipoPessoa = documento.length > 11 ? 'J' : 'F';
     const body = { nome: contato.nome || 'Cliente', tipoPessoa, situacao: 'A' };
     if (documento) body.numeroDocumento = documento;
     if (tipoPessoa === 'J' && contato.ie) body.ie = contato.ie;
  
-    const createResp = await fetch('https://www.bling.com.br/Api/v3/contatos', {
-      method: 'POST', headers, body: JSON.stringify(body)
-    });
-    const createData = await createResp.json();
+    const r = await fetchBling(
+      'https://www.bling.com.br/Api/v3/contatos',
+      { method: 'POST', headers: blingHeaders, body: JSON.stringify(body) }
+    );
+    const d = await r.json();
  
-    if (createResp.ok && createData?.data?.id) return createData.data.id;
+    if (r.ok && d?.data?.id) return d.data.id;
  
-    // Se falhou por duplicidade, tentar buscar novamente (às vezes o Bling demora a indexar)
+    // Bling pode rejeitar por duplicidade mas já ter o contato — tentar buscar de novo
     if (documento) {
-      await new Promise(r => setTimeout(r, 500)); // aguardar 500ms
-      const retry = await buscarContato(`numeroDocumento=${documento}`);
+      await sleep(600);
+      const retry = await buscar(`numeroDocumento=${documento}`);
       if (retry?.id) return retry.id;
     }
  
-    console.error('Falha ao criar contato:', JSON.stringify(createData));
+    console.error('Falha ao criar contato:', JSON.stringify(d));
     return null;
   } catch (e) {
     console.error('Erro ao resolver contato:', e.message);
