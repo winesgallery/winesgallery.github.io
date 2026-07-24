@@ -152,21 +152,26 @@ export default async function handler(req, res) {
             }
           } else {
             await sbUpsert('pedidos', {
-              id:            `BLING-${blingId}`,
-              bling_id:      blingId,
-              bling_sent_at: dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
-              status:        'fechado',
-              origem:        'bling_sync',
+              id:                `BLING-${blingId}`,
+              bling_id:          blingId,
+              bling_sent_at:     dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
+              status:            'fechado',
+              tipo:              'B2B',
+              origem:            'bling_sync',
               total,
-              data:          dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
-              fat_data:      dataEmissao,
-              fat_forma:     '', fat_parcelas: 1, fat_prazos: '',
-              cliente_json:  clienteJson,
-              itens_json:    itensJson,
-              vendedor:      '', vendedor_name: '',
-              numero_bling:  String(detalhe.numero || nf.numero || ''),
-              created_at:    new Date().toISOString(),
-              updated_at:    new Date().toISOString()
+              fat_data:          dataEmissao,
+              fat_forma:         '',
+              fat_parcelas:      1,
+              fat_prazos:        '',
+              bling_id:          blingId,
+              vendedor_login:    '',
+              excluido:          false,
+              cliente_snapshot:  clienteJson,
+              itens_snapshot:    itensJson,
+              comments_snapshot: '[]',
+              history_snapshot:  '[]',
+              created_at:        new Date().toISOString(),
+              updated_at:        new Date().toISOString()
             });
             totalImportadas++;
           }
