@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID || !CLIENT_SECRET)
     return res.status(500).json({ error: 'Variáveis de ambiente não configuradas' });
  
-  const { dataInicio = '2026-01-01', paginas = 50 } = req.body || req.query || {};
+  const { dataInicio = '2026-01-01', paginas = 50, debug = false } = req.body || req.query || {};
   const sleep = ms => new Promise(r => setTimeout(r, ms));
  
   async function fetchBling(url, options = {}, maxRetries = 4) {
@@ -45,10 +45,8 @@ export default async function handler(req, res) {
     const rows = await r.json();
     const row  = rows?.[0];
     if (!row?.refresh_token) return null;
- 
     const expired = Date.now() > (new Date(row.expires_at || 0).getTime() - 60000);
     if (!expired) return row.access_token;
- 
     const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
     const rf = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
       method: 'POST',
@@ -57,14 +55,13 @@ export default async function handler(req, res) {
     });
     const d = await rf.json();
     if (!rf.ok || !d.access_token) return null;
- 
     await fetch(`${SUPABASE_URL}/rest/v1/bling_tokens?id=eq.1`, {
       method: 'PATCH', headers: sbH,
       body: JSON.stringify({
-        access_token:  d.access_token,
+        access_token: d.access_token,
         refresh_token: d.refresh_token || row.refresh_token,
-        expires_at:    new Date(Date.now() + (d.expires_in || 21600) * 1000).toISOString(),
-        updated_at:    new Date().toISOString()
+        expires_at: new Date(Date.now() + (d.expires_in || 21600) * 1000).toISOString(),
+        updated_at: new Date().toISOString()
       })
     });
     return d.access_token;
@@ -72,82 +69,123 @@ export default async function handler(req, res) {
  
   try {
     const token = await getToken();
-    if (!token) return res.status(401).json({ error: 'Bling não autorizado. Acesse /api/bling-connect.' });
+    if (!token) return res.status(401).json({ error: 'Bling não autorizado.' });
  
     const bH = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
  
+    // ── MODO DEBUG: inspecionar estrutura real da API ──
+    if (debug === 'true' || debug === true) {
+      const testList = await fetchBling(
+        `https://www.bling.com.br/Api/v3/nfe?pagina=1&limite=2&dataEmissaoInicial=${dataInicio}`,
+        { headers: bH }
+      );
+      const listData = await testList.json();
+      const primeiraId = listData?.data?.[0]?.id;
+ 
+      let detalheData = null;
+      if (primeiraId) {
+        await sleep(400);
+        const dr = await fetchBling(`https://www.bling.com.br/Api/v3/nfe/${primeiraId}`, { headers: bH });
+        detalheData = await dr.json();
+      }
+ 
+      return res.status(200).json({
+        debug: true,
+        total_lista: listData?.data?.length || 0,
+        amostra_lista: listData?.data?.[0] || null,        // campos da listagem
+        amostra_detalhe: detalheData?.data || null,        // campos do detalhe
+        campos_lista: Object.keys(listData?.data?.[0] || {}),
+        campos_detalhe: Object.keys(detalheData?.data || {})
+      });
+    }
+ 
+    // ── SYNC NORMAL ──
     let totalImportadas = 0, totalAtualizadas = 0, totalEncontrados = 0;
     let erros = [], pagina = 1;
-    const maxPaginas = parseInt(paginas) || 10;
+    const maxPaginas = parseInt(paginas) || 50;
  
     while (pagina <= maxPaginas) {
       await sleep(pagina > 1 ? 500 : 0);
- 
-      // NF-e autorizadas a partir da data de início
       const url = `https://www.bling.com.br/Api/v3/nfe?pagina=${pagina}&limite=100&dataEmissaoInicial=${dataInicio}`;
-      console.log(`Buscando página ${pagina}`);
- 
+      
       let pageResp;
       try { pageResp = await fetchBling(url, { headers: bH }); }
       catch(e) { erros.push(`Pág ${pagina}: ${e.message}`); break; }
  
       const pageData = await pageResp.json();
- 
       if (!pageResp.ok) {
         if (pagina === 1) return res.status(200).json({
-          ok: false, diagnostico: true,
-          status_http: pageResp.status,
-          resposta_bling: pageData,
-          mensagem: 'Erro ao buscar NFs.'
+          ok: false, status_http: pageResp.status, resposta_bling: pageData
         });
         break;
       }
  
       const nfs = pageData?.data || [];
-      console.log(`Página ${pagina}: ${nfs.length} NFs`);
       if (!nfs.length) break;
       totalEncontrados += nfs.length;
  
       for (const nf of nfs) {
-        await sleep(300);
+        await sleep(350);
         try {
-          // Buscar detalhes completos da NF
-          let detalhe = nf;
-          if (nf.id) {
-            try {
-              const dr = await fetchBling(`https://www.bling.com.br/Api/v3/nfe/${nf.id}`, { headers: bH });
-              const dd = await dr.json();
-              detalhe = dd?.data || nf;
-              await sleep(300);
-            } catch(e) { console.warn('Detalhe NF falhou:', nf.id); }
-          }
+          // Buscar detalhe completo da NF
+          let detalhe = null;
+          try {
+            const dr = await fetchBling(`https://www.bling.com.br/Api/v3/nfe/${nf.id}`, { headers: bH });
+            const dd = await dr.json();
+            detalhe = dd?.data || null;
+            await sleep(350);
+          } catch(e) { console.warn('Detalhe NF falhou:', nf.id, e.message); }
  
-          const blingId      = String(nf.id);
-          const dataEmissao  = (detalhe.dataEmissao || nf.dataEmissao || '').substring(0, 10);
-          const total        = parseFloat(detalhe.totalProdutos || detalhe.valor || nf.totalProdutos || 0);
-          const contato      = detalhe.contato || nf.contato || {};
+          // Usar detalhe se disponível, senão lista mínima
+          const src = detalhe || nf;
  
-          const clienteJson = JSON.stringify({
-            razao: contato.nome || 'Importado do Bling',
-            cnpj:  (contato.numeroDocumento || '').replace(/\D/g, ''),
-            tipo:  contato.tipoPessoa === 'J' ? 'PJ' : 'PF'
-          });
+          // ── Extrair campos com múltiplos nomes possíveis ──
+          const dataEmissao = (src.dataEmissao || src.data_emissao || src.data || '').substring(0, 10);
  
-          const itensJson = JSON.stringify((detalhe.itens || []).map(it => ({
-            nome:  it.descricao || it.produto?.descricao || '—',
-            qty:   parseFloat(it.quantidade || 1),
-            price: parseFloat(it.valor || 0),
+          // Total: vários campos possíveis
+          const total = parseFloat(
+            src.totalProdutos || src.total_produtos ||
+            src.totalNota     || src.total_nota     ||
+            src.valor         || src.total          || 0
+          );
+ 
+          // Contato
+          const contato = src.contato || src.cliente || {};
+          const nomeCliente = contato.nome || contato.razaoSocial || contato.razao_social || 'Importado do Bling';
+          const docCliente  = (contato.numeroDocumento || contato.numero_documento || contato.cpfCnpj || '').replace(/\D/g,'');
+          const tipoCliente = (docCliente.length > 11) ? 'PJ' : 'PF';
+ 
+          // Itens
+          const itensRaw = src.itens || src.produtos || src.items || [];
+          const itens = itensRaw.map(it => ({
+            nome:  it.descricao || it.nome || (it.produto?.descricao) || '—',
+            qty:   parseFloat(it.quantidade || it.qty || 1),
+            price: parseFloat(it.valor || it.valorUnitario || it.price || 0),
             safra: ''
-          })));
+          }));
+ 
+          const blingId = String(nf.id);
+          const clienteSnapshot = JSON.stringify({
+            razao: nomeCliente, cnpj: docCliente, tipo: tipoCliente
+          });
+          const itensSnapshot = JSON.stringify(itens);
  
           // Verificar se já existe
-          const ex      = await fetch(`${SUPABASE_URL}/rest/v1/pedidos?bling_id=eq.${blingId}&select=id,total,fat_data`, { headers: sbH });
+          const ex = await fetch(
+            `${SUPABASE_URL}/rest/v1/pedidos?bling_id=eq.${blingId}&select=id,total,fat_data`,
+            { headers: sbH }
+          );
           const exRows  = await ex.json();
           const jaExiste = exRows?.[0];
  
           if (jaExiste) {
-            if (jaExiste.fat_data !== dataEmissao || Math.abs((jaExiste.total || 0) - total) > 0.01) {
-              await sbUpsert('pedidos', { id: jaExiste.id, fat_data: dataEmissao, total, updated_at: new Date().toISOString() });
+            if (jaExiste.fat_data !== dataEmissao || Math.abs((jaExiste.total||0) - total) > 0.01) {
+              await sbUpsert('pedidos', {
+                id: jaExiste.id, fat_data: dataEmissao, total,
+                cliente_snapshot: clienteSnapshot,
+                itens_snapshot: itensSnapshot,
+                updated_at: new Date().toISOString()
+              });
               totalAtualizadas++;
             }
           } else {
@@ -156,18 +194,15 @@ export default async function handler(req, res) {
               bling_id:          blingId,
               bling_sent_at:     dataEmissao ? `${dataEmissao}T12:00:00.000Z` : new Date().toISOString(),
               status:            'fechado',
-              tipo:              'B2B',
+              tipo:              tipoCliente === 'PJ' ? 'B2B' : 'B2C',
               origem:            'bling_sync',
               total,
               fat_data:          dataEmissao,
-              fat_forma:         '',
-              fat_parcelas:      1,
-              fat_prazos:        '',
-              bling_id:          blingId,
+              fat_forma:         '', fat_parcelas: 1, fat_prazos: '',
               vendedor_login:    '',
               excluido:          false,
-              cliente_snapshot:  clienteJson,
-              itens_snapshot:    itensJson,
+              cliente_snapshot:  clienteSnapshot,
+              itens_snapshot:    itensSnapshot,
               comments_snapshot: '[]',
               history_snapshot:  '[]',
               created_at:        new Date().toISOString(),
@@ -182,25 +217,21 @@ export default async function handler(req, res) {
       pagina++;
     }
  
-    // Log do sync
     await sbUpsert('bling_sync_log', {
       id: Date.now(), executado_em: new Date().toISOString(),
       importadas: totalImportadas, atualizadas: totalAtualizadas,
-      erros: erros.length, detalhes: erros.join('\n').substring(0,2000) || null,
+      erros: erros.length, detalhes: erros.join('\n').substring(0,2000)||null,
       data_inicio: dataInicio
-    }).catch(() => {});
+    }).catch(()=>{});
  
     return res.status(200).json({
-      ok: true,
-      importadas: totalImportadas,
+      ok: true, importadas: totalImportadas,
       atualizadas: totalAtualizadas,
       total_encontrados: totalEncontrados,
-      erros: erros.length,
-      detalheErros: erros.slice(0, 5)
+      erros: erros.length, detalheErros: erros.slice(0,5)
     });
  
   } catch(err) {
-    console.error('SYNC ERRO:', err.message);
     return res.status(500).json({ error: err.message });
   }
 }
