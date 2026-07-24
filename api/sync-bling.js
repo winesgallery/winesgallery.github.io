@@ -178,15 +178,16 @@ export default async function handler(req, res) {
           const jaExiste = exRows?.[0];
  
           if (jaExiste) {
-            if (jaExiste.fat_data !== dataEmissao || Math.abs((jaExiste.total||0) - total) > 0.01) {
-              await sbUpsert('pedidos', {
-                id: jaExiste.id, fat_data: dataEmissao, total,
-                cliente_snapshot: clienteSnapshot,
-                itens_snapshot: itensSnapshot,
-                updated_at: new Date().toISOString()
-              });
-              totalAtualizadas++;
-            }
+            // Sempre atualiza registros importados do Bling (garante dados completos)
+            await sbUpsert('pedidos', {
+              id:               jaExiste.id,
+              fat_data:         dataEmissao,
+              total,
+              cliente_snapshot: clienteSnapshot,
+              itens_snapshot:   itensSnapshot,
+              updated_at:       new Date().toISOString()
+            });
+            totalAtualizadas++;
           } else {
             await sbUpsert('pedidos', {
               id:                `BLING-${blingId}`,
