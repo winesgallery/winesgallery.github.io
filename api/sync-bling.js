@@ -100,6 +100,22 @@ export default async function handler(req, res) {
     }
  
     // ── SYNC NORMAL ──
+    // ── Carregar De/Para de rótulos (código Bling → nome catálogo) ──
+    let deParaMap = {}; // { 'LUNMB': 'Lunea Malbec', ... }
+    try {
+      const dpResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/rotulos_depara?select=codigo_bling,nome`,
+        { headers: sbH }
+      );
+      const dpRows = await dpResp.json();
+      (dpRows || []).forEach(r => {
+        if (r.codigo_bling && r.nome) deParaMap[r.codigo_bling.trim()] = r.nome.trim();
+      });
+      console.log(`De/Para carregado: ${Object.keys(deParaMap).length} rótulos`);
+    } catch(e) {
+      console.warn('De/Para não carregado:', e.message);
+    }
+ 
     let totalImportadas = 0, totalAtualizadas = 0, totalEncontrados = 0;
     let erros = [], pagina = 1;
     const maxPaginas = parseInt(paginas) || 50;
@@ -152,20 +168,33 @@ export default async function handler(req, res) {
           const docCliente  = (contato.numeroDocumento || '').replace(/\D/g,'');
           const tipoCliente = docCliente.length > 11 ? 'PJ' : 'PF';
  
-          // Itens: itens[].descricao, .quantidade, .valor (unitário), .codigo
+          // Itens: converter código Bling → nome catálogo via De/Para
           const itensRaw = src.itens || [];
-          const itens = itensRaw.map(it => ({
-            nome:  it.descricao || '—',
-            cod:   it.codigo    || '',
-            qty:   parseFloat(it.quantidade || 1),
-            price: parseFloat(it.valor      || 0),
-            total: parseFloat(it.valorTotal || (it.quantidade * it.valor) || 0),
-            safra: ''
-          }));
+          const itens = itensRaw.map(it => {
+            const cod  = (it.codigo || '').trim();
+            const nome = deParaMap[cod] || it.descricao || '—'; // preferir nome do catálogo
+            return {
+              nome,
+              cod,
+              qty:   parseFloat(it.quantidade || 1),
+              price: parseFloat(it.valor      || 0),
+              total: parseFloat(it.valorTotal || (it.quantidade * it.valor) || 0),
+              safra: ''
+            };
+          });
  
           const blingId = String(nf.id);
           const clienteSnapshot = JSON.stringify({
-            razao: nomeCliente, cnpj: docCliente, tipo: tipoCliente
+            razao:    nomeCliente,
+            cnpj:     tipoCliente === 'PJ' ? docCliente : '',
+            cpf:      tipoCliente === 'PF' ? docCliente : '',
+            ie:       contato.ie       || '',
+            tel:      contato.telefone || '',
+            email:    contato.email    || '',
+            end:      contato.endereco?.endereco || '',
+            cidade:   contato.endereco?.municipio || '',
+            cep:      contato.endereco?.cep || '',
+            tipo:     tipoCliente
           });
           const itensSnapshot = JSON.stringify(itens);
  
@@ -185,6 +214,13 @@ export default async function handler(req, res) {
               total,
               cliente_snapshot: clienteSnapshot,
               itens_snapshot:   itensSnapshot,
+              fat_forma:        (src.parcelas?.[0]?.formaPagamento ? 'bling' : ''),
+              fat_parcelas:     src.parcelas?.length || 1,
+              fat_prazos:       (src.parcelas || []).map(p => {
+                if(!p.data) return '30';
+                const dias = Math.round((new Date(p.data) - new Date(dataEmissao)) / 86400000);
+                return String(Math.max(0, dias));
+              }).join(','),
               updated_at:       new Date().toISOString()
             });
             totalAtualizadas++;
@@ -198,7 +234,13 @@ export default async function handler(req, res) {
               origem:            'bling_sync',
               total,
               fat_data:          dataEmissao,
-              fat_forma:         '', fat_parcelas: 1, fat_prazos: '',
+              fat_forma:         (src.parcelas?.[0]?.formaPagamento ? 'bling' : ''),
+              fat_parcelas:      src.parcelas?.length || 1,
+              fat_prazos:        (src.parcelas || []).map(p => {
+                if(!p.data) return '30';
+                const dias = Math.round((new Date(p.data) - new Date(dataEmissao)) / 86400000);
+                return String(Math.max(0, dias));
+              }).join(','),
               vendedor_login:    '',
               excluido:          false,
               cliente_snapshot:  clienteSnapshot,
