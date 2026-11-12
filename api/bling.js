@@ -67,10 +67,15 @@ export default async function handler(req, res) {
  
     // ── 1. Resolver contato ──
     if (payload?.contato && !payload.contato.id && isVendaOuOrc) {
-      const contatoId = await resolveContatoId(payload.contato, blingHeaders, fetchBling, sleep);
+      const diag = [];
+      const contatoId = await resolveContatoId(payload.contato, blingHeaders, fetchBling, sleep, diag);
       if (!contatoId) {
+        console.error('DIAGNOSTICO CONTATO:', JSON.stringify(diag));
         return res.status(400).json({
-          error: { description: 'Não foi possível localizar nem cadastrar o contato no Bling. Verifique o CNPJ/CPF do cliente.' }
+          error: {
+            description: 'Não foi possível localizar nem cadastrar o contato no Bling. Verifique o CNPJ/CPF do cliente.',
+            diagnostico: diag
+          }
         });
       }
       payload.contato = { id: contatoId };
@@ -240,69 +245,123 @@ async function resolveFormaPagamentoId(tipo, blingHeaders, fetchBling) {
 }
  
 // ── Resolver contato: busca por CNPJ/CPF ou nome, cria se não existir ──
-async function resolveContatoId(contato, blingHeaders, fetchBling, sleep) {
-  const documento = (contato.documento || '').replace(/\D/g, '');
+// Cada passo registra em `diag` o que o Bling respondeu (status + trecho do corpo),
+// para que o motivo real apareça no e-mail de falha.
+function formatarDocumento(d) {
+  if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+  if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+  return d;
+}
  
-  async function buscar(params) {
+async function resolveContatoId(contato, blingHeaders, fetchBling, sleep, diag = []) {
+  const documento = (contato.documento || '').replace(/\D/g, '');
+  const soDigitos = v => String(v || '').replace(/\D/g, '');
+  const trecho = o => { try { return JSON.stringify(o).slice(0, 400); } catch (e) { return String(o).slice(0, 400); } };
+ 
+  // Faz uma busca, registra o resultado e devolve a lista de contatos (ou null se deu erro)
+  async function listar(passo, queryString) {
     try {
       const r = await fetchBling(
-        `https://www.bling.com.br/Api/v3/contatos?${params}&limite=10`,
+        `https://www.bling.com.br/Api/v3/contatos?${queryString}&limite=20`,
         { headers: blingHeaders }
       );
-      const d = await r.json();
-      return d?.data?.[0] || null;
-    } catch (e) { return null; }
+      const txt = await r.text();
+      let d = null; try { d = JSON.parse(txt); } catch (e) {}
+      if (!r.ok) {
+        diag.push({ passo, status: r.status, resposta: txt.slice(0, 400) });
+        return null;
+      }
+      const lista = d?.data || [];
+      diag.push({ passo, status: r.status, encontrados: lista.length });
+      return lista;
+    } catch (e) {
+      diag.push({ passo, erro: e.message });
+      return null;
+    }
   }
  
-  // 1. Por documento
+  // Escolhe, na lista, o contato cujo documento bate; se só houver 1 resultado, usa ele
+  function escolher(lista) {
+    if (!lista || !lista.length) return null;
+    if (documento) {
+      const porDoc = lista.find(c => soDigitos(c.numeroDocumento) === documento);
+      if (porDoc?.id) return porDoc.id;
+    }
+    return null;
+  }
+ 
+  // 1. Por documento (só dígitos e depois com pontuação)
   if (documento) {
-    const found = await buscar(`numeroDocumento=${documento}`);
-    if (found?.id) return found.id;
+    let achou = escolher(await listar('busca numeroDocumento (digitos)', `numeroDocumento=${documento}`));
+    if (achou) return achou;
+    await sleep(400);
+ 
+    const fmt = formatarDocumento(documento);
+    if (fmt !== documento) {
+      achou = escolher(await listar('busca numeroDocumento (formatado)', `numeroDocumento=${encodeURIComponent(fmt)}`));
+      if (achou) return achou;
+      await sleep(400);
+    }
+ 
+    // pesquisa livre pelo documento
+    achou = escolher(await listar('pesquisa pelo documento', `pesquisa=${documento}`));
+    if (achou) return achou;
     await sleep(400);
   }
  
   // 2. Por nome
   if (contato.nome) {
-    try {
-      const r = await fetchBling(
-        `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(contato.nome)}&limite=20`,
-        { headers: blingHeaders }
-      );
-      const d = await r.json();
-      const lista = d?.data || [];
-      const porDoc = lista.find(c => documento && (c.numeroDocumento || '').replace(/\D/g, '') === documento);
-      if (porDoc?.id) return porDoc.id;
-      if (lista.length === 1 && lista[0]?.id) return lista[0].id;
-    } catch (e) {}
+    const lista = await listar('pesquisa por nome', `pesquisa=${encodeURIComponent(contato.nome)}`);
+    const porDoc = escolher(lista);
+    if (porDoc) return porDoc;
+    // só aceita único resultado por nome quando o cadastro no Bling não tem documento para conferir
+    if (lista && lista.length === 1 && lista[0]?.id && !soDigitos(lista[0].numeroDocumento)) return lista[0].id;
     await sleep(400);
   }
  
   // 3. Criar contato
   try {
     const tipoPessoa = documento.length > 11 ? 'J' : 'F';
-    const body = { nome: contato.nome || 'Cliente', tipoPessoa, situacao: 'A' };
+    const body = { nome: contato.nome || 'Cliente', tipo: tipoPessoa, situacao: 'A' };
     if (documento) body.numeroDocumento = documento;
-    if (tipoPessoa === 'J' && contato.ie) body.ie = contato.ie;
+    if (tipoPessoa === 'J') {
+      if (contato.ie) { body.ie = contato.ie; body.indicadorIe = 1; }
+      else body.indicadorIe = 9; // não contribuinte
+    }
+    if (contato.telefone) body.celular = soDigitos(contato.telefone);
+    if (contato.email) body.email = contato.email;
+    const geral = contato.endereco?.geral;
+    if (geral && (geral.endereco || geral.cep || geral.municipio)) {
+      // "São Paulo SP" → município "São Paulo" + UF "SP"
+      let municipio = (geral.municipio || '').trim(), uf = '';
+      const m = municipio.match(/^(.*?)[\s,\-\/]+([A-Za-z]{2})$/);
+      if (m) { municipio = m[1].trim(); uf = m[2].toUpperCase(); }
+      body.endereco = { geral: { endereco: geral.endereco || '', cep: geral.cep || '', municipio, uf } };
+    }
  
     const r = await fetchBling(
       'https://www.bling.com.br/Api/v3/contatos',
       { method: 'POST', headers: blingHeaders, body: JSON.stringify(body) }
     );
-    const d = await r.json();
+    const txt = await r.text();
+    let d = null; try { d = JSON.parse(txt); } catch (e) {}
+    diag.push({ passo: 'cadastro do contato', status: r.status, resposta: txt.slice(0, 600) });
  
     if (r.ok && d?.data?.id) return d.data.id;
  
     // Bling pode rejeitar por duplicidade mas já ter o contato — tentar buscar de novo
     if (documento) {
       await sleep(600);
-      const retry = await buscar(`numeroDocumento=${documento}`);
-      if (retry?.id) return retry.id;
+      const achou = escolher(await listar('nova busca após falha no cadastro', `numeroDocumento=${documento}`));
+      if (achou) return achou;
     }
  
-    console.error('Falha ao criar contato:', JSON.stringify(d));
+    console.error('Falha ao criar contato:', txt);
     return null;
   } catch (e) {
+    diag.push({ passo: 'cadastro do contato', erro: e.message });
     console.error('Erro ao resolver contato:', e.message);
     return null;
   }
 }
+ 
