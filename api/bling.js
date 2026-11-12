@@ -16,8 +16,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Variáveis de ambiente do Bling/Supabase não configuradas' });
   }
  
-  const { endpoint, payload } = req.body || {};
-  if (!endpoint) return res.status(400).json({ error: 'endpoint é obrigatório' });
+  const { endpoint: endpointRecebido, payload } = req.body || {};
+  if (!endpointRecebido) return res.status(400).json({ error: 'endpoint é obrigatório' });
+  // O Bling bloqueou www.bling.com.br para API: sempre usar api.bling.com.br
+  const endpoint = String(endpointRecebido).replace('://www.bling.com.br', '://api.bling.com.br');
  
   // ── Helper: sleep ──
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -108,7 +110,7 @@ export default async function handler(req, res) {
           // Busca por código
           try {
             const r1 = await fetchBling(
-              `https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(item.codigo)}&limite=5`,
+              `https://api.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(item.codigo)}&limite=5`,
               { headers: blingHeaders }
             );
             const d1 = await r1.json();
@@ -122,7 +124,7 @@ export default async function handler(req, res) {
             await sleep(400); // pausa obrigatória entre buscas
             try {
               const r2 = await fetchBling(
-                `https://www.bling.com.br/Api/v3/produtos?nome=${encodeURIComponent(item.descricao)}&limite=5`,
+                `https://api.bling.com.br/Api/v3/produtos?nome=${encodeURIComponent(item.descricao)}&limite=5`,
                 { headers: blingHeaders }
               );
               const d2 = await r2.json();
@@ -193,7 +195,7 @@ async function getValidAccessToken(SUPABASE_URL, SUPABASE_KEY, CLIENT_ID, CLIENT
  
   // Renovar token
   const basicAuth   = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-  const refreshResp = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
+  const refreshResp = await fetch('https://api.bling.com.br/Api/v3/oauth/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -231,7 +233,7 @@ async function resolveFormaPagamentoId(tipo, blingHeaders, fetchBling) {
  
   try {
     const resp = await fetchBling(
-      'https://www.bling.com.br/Api/v3/formas-pagamentos?limite=100',
+      'https://api.bling.com.br/Api/v3/formas-pagamentos?limite=100',
       { headers: blingHeaders }
     );
     const data  = await resp.json();
@@ -262,7 +264,7 @@ async function resolveContatoId(contato, blingHeaders, fetchBling, sleep, diag =
   async function listar(passo, queryString) {
     try {
       const r = await fetchBling(
-        `https://www.bling.com.br/Api/v3/contatos?${queryString}&limite=20`,
+        `https://api.bling.com.br/Api/v3/contatos?${queryString}&limite=20`,
         { headers: blingHeaders }
       );
       const txt = await r.text();
@@ -340,7 +342,7 @@ async function resolveContatoId(contato, blingHeaders, fetchBling, sleep, diag =
     }
  
     const r = await fetchBling(
-      'https://www.bling.com.br/Api/v3/contatos',
+      'https://api.bling.com.br/Api/v3/contatos',
       { method: 'POST', headers: blingHeaders, body: JSON.stringify(body) }
     );
     const txt = await r.text();
