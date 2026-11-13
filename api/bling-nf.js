@@ -2,42 +2,50 @@
 // Busca no Bling as notas fiscais dos pedidos que ainda estão "aguardando NF" e grava em pedido_fluxo.
 // POST (ou GET, para uso em cron) sem corpo: verifica até 12 pedidos pendentes, os verificados há mais tempo primeiro.
 // Pedidos com NF informada à mão (nf_manual = true) nunca são tocados.
- 
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
- 
+
   const SB = process.env.SUPABASE_URL;
   const KEY = process.env.SUPABASE_SERVICE_KEY;
   const CID = process.env.BLING_CLIENT_ID;
   const CSEC = process.env.BLING_CLIENT_SECRET;
   if (!SB || !KEY || !CID || !CSEC) return res.status(500).json({ error: 'Variáveis de ambiente não configuradas' });
- 
+
   const sb = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const out = { verificados: 0, emitidas: [], semNota: 0, erros: [] };
- 
+
   try {
     const pend = await (await fetch(
       `${SB}/rest/v1/pedido_fluxo?nf_status=eq.aguardando&nf_manual=eq.false&select=pedido_id&order=nf_verificado_em.asc.nullsfirst&limit=12`,
       { headers: sb })).json();
     if (!Array.isArray(pend) || !pend.length) return res.status(200).json(out);
- 
+
     const inList = pend.map(r => `"${String(r.pedido_id).replace(/"/g, '')}"`).join(',');
     const peds = await (await fetch(
       `${SB}/rest/v1/pedidos?id=in.(${encodeURIComponent(inList)})&select=id,bling_id`, { headers: sb })).json();
     const blingDe = {};
     (peds || []).forEach(p => { blingDe[p.id] = p.bling_id; });
- 
+    // amostras (bonificação) também têm NF: o ID do Bling delas fica em pedidos_amostras
+    const faltam = pend.map(r => r.pedido_id).filter(id => !blingDe[id]);
+    if (faltam.length) {
+      const il = faltam.map(id => `"${String(id).replace(/"/g, '')}"`).join(',');
+      const ams = await (await fetch(
+        `${SB}/rest/v1/pedidos_amostras?id=in.(${encodeURIComponent(il)})&select=id,bling_id`, { headers: sb })).json();
+      (Array.isArray(ams) ? ams : []).forEach(a => { blingDe[a.id] = a.bling_id; });
+    }
+
     const token = await getValidAccessToken(SB, KEY, CID, CSEC);
     if (!token) return res.status(401).json({ error: 'Bling não conectado. Acesse /api/bling-connect.' });
     const bh = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
- 
+
     const patch = (pid, data) => fetch(`${SB}/rest/v1/pedido_fluxo?pedido_id=eq.${encodeURIComponent(pid)}`,
       { method: 'PATCH', headers: sb, body: JSON.stringify(data) });
- 
+
     for (const r of pend) {
       const pid = r.pedido_id;
       const bid = blingDe[pid];
@@ -84,7 +92,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
- 
+
 async function getValidAccessToken(SB, KEY, CID, CSEC) {
   const headers = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
   const rows = await (await fetch(`${SB}/rest/v1/bling_tokens?id=eq.1&select=*`, { headers })).json();
@@ -107,4 +115,3 @@ async function getValidAccessToken(SB, KEY, CID, CSEC) {
   });
   return rd.access_token;
 }
- 
