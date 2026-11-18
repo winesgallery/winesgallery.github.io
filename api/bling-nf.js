@@ -17,21 +17,27 @@ export default async function handler(req, res) {
 
   const sb = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const out = { verificados: 0, emitidas: [], semNota: 0, erros: [] };
+  const out = { verificados: 0, emitidas: [], semNota: 0, xmlCompletados: [], erros: [] };
 
   try {
     const pend = await (await fetch(
       `${SB}/rest/v1/pedido_fluxo?nf_status=eq.aguardando&nf_manual=eq.false&select=pedido_id&order=nf_verificado_em.asc.nullsfirst&limit=12`,
       { headers: sb })).json();
-    if (!Array.isArray(pend) || !pend.length) return res.status(200).json(out);
+    // NFs já emitidas, mas ainda sem XML (o Bling às vezes libera o XML depois do PDF): completa depois
+    const semXml = await (await fetch(
+      `${SB}/rest/v1/pedido_fluxo?nf_status=eq.emitida&nf_manual=eq.false&nf_xml_url=is.null&nf_bling_id=not.is.null&select=pedido_id,nf_bling_id,nf_pdf_url&order=nf_verificado_em.asc.nullsfirst&limit=8`,
+      { headers: sb })).json();
+    const listaPend = Array.isArray(pend) ? pend : [];
+    const listaSemXml = Array.isArray(semXml) ? semXml : [];
+    if (!listaPend.length && !listaSemXml.length) return res.status(200).json(out);
 
-    const inList = pend.map(r => `"${String(r.pedido_id).replace(/"/g, '')}"`).join(',');
+    const inList = listaPend.map(r => `"${String(r.pedido_id).replace(/"/g, '')}"`).join(',');
     const peds = await (await fetch(
       `${SB}/rest/v1/pedidos?id=in.(${encodeURIComponent(inList)})&select=id,bling_id`, { headers: sb })).json();
     const blingDe = {};
     (peds || []).forEach(p => { blingDe[p.id] = p.bling_id; });
     // amostras (bonificação) também têm NF: o ID do Bling delas fica em pedidos_amostras
-    const faltam = pend.map(r => r.pedido_id).filter(id => !blingDe[id]);
+    const faltam = listaPend.map(r => r.pedido_id).filter(id => !blingDe[id]);
     if (faltam.length) {
       const il = faltam.map(id => `"${String(id).replace(/"/g, '')}"`).join(',');
       const ams = await (await fetch(
@@ -46,7 +52,7 @@ export default async function handler(req, res) {
     const patch = (pid, data) => fetch(`${SB}/rest/v1/pedido_fluxo?pedido_id=eq.${encodeURIComponent(pid)}`,
       { method: 'PATCH', headers: sb, body: JSON.stringify(data) });
 
-    for (const r of pend) {
+    for (const r of listaPend) {
       const pid = r.pedido_id;
       const bid = blingDe[pid];
       const agora = new Date().toISOString();
@@ -74,7 +80,7 @@ export default async function handler(req, res) {
             nf_status: 'emitida', nf_origem: 'bling', nf_bling_id: String(nfId), nf_bling_situacao: sit,
             nf_numero: numero, nf_serie: d.serie != null ? String(d.serie) : null, nf_chave: chave || null,
             nf_data: d.dataEmissao ? String(d.dataEmissao).slice(0, 10) : null,
-            nf_pdf_url: d.linkPDF || d.linkDanfe || null, nf_xml_url: d.xml || null,
+            nf_pdf_url: d.linkPDF || d.linkDanfe || null, nf_xml_url: d.xml || d.linkXml || null,
             nf_verificado_em: agora, nf_emitida_em: agora, nf_erro: null,
           });
           await fetch(`${SB}/rest/v1/pedido_fluxo_historico`, { method: 'POST', headers: sb,
@@ -85,6 +91,27 @@ export default async function handler(req, res) {
       } catch (e) {
         out.erros.push({ pedido: pid, erro: e.message });
         await patch(pid, { nf_verificado_em: agora, nf_erro: String(e.message).slice(0, 300) });
+      }
+    }
+    // completa o XML das NFs que já saíram só com o PDF
+    for (const r of listaSemXml) {
+      const pid = r.pedido_id;
+      try {
+        const nr = await fetch(`https://api.bling.com.br/Api/v3/nfe/${r.nf_bling_id}`, { headers: bh });
+        const nj = await nr.json();
+        if (!nr.ok) throw new Error('Bling NF ' + nr.status + ': ' + JSON.stringify(nj).slice(0, 200));
+        const d = nj?.data || {};
+        const xml = d.xml || d.linkXml || null;
+        const agora = new Date().toISOString();
+        const upd = { nf_verificado_em: agora, nf_erro: null };
+        if (xml) upd.nf_xml_url = xml;
+        if (!r.nf_pdf_url && (d.linkPDF || d.linkDanfe)) upd.nf_pdf_url = d.linkPDF || d.linkDanfe;
+        await patch(pid, upd);
+        if (xml) out.xmlCompletados.push(pid);
+        await sleep(400);
+      } catch (e) {
+        out.erros.push({ pedido: pid, erro: e.message });
+        await patch(pid, { nf_verificado_em: new Date().toISOString(), nf_erro: String(e.message).slice(0, 300) });
       }
     }
     return res.status(200).json(out);
