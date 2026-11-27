@@ -1,17 +1,26 @@
+
 // api/send-email-anexos.js
 // Envia e-mail pelo Resend ANEXANDO arquivos do bucket privado "fluxo" (NF, boletos, comprovantes).
 // Recebe: { para, cc, subject, body, anexos: [{ url, filename }] }
-// Só aceita URLs assinadas do próprio bucket "fluxo" do Supabase do projeto.
+// Só aceita URLs assinadas do próprio bucket "fluxo" do Supabase do projeto
+// e links de documentos do Bling (https, domínio bling.com.br) — é de onde vem o PDF da NF.
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM = process.env.EMAIL_FROM || 'Wines Gallery <pedidos@winesgallery.com.br>';
 const PREFIXO = `${SUPABASE_URL}/storage/v1/object/sign/fluxo/`;
 const LIMITE_TOTAL = 30 * 1024 * 1024; // 30 MB (limite do Resend: 40 MB)
-
+ 
 export const config = { api: { bodyParser: { sizeLimit: '1mb' }, maxDuration: 60 } };
-
+ 
+const urlPermitida = (u) => {
+  if (u.startsWith(PREFIXO)) return true;
+  try {
+    const x = new URL(u);
+    return x.protocol === 'https:' && (x.hostname === 'bling.com.br' || x.hostname.endsWith('.bling.com.br'));
+  } catch (e) { return false; }
+};
 const lista = (v) => String(v || '').split(/[;,]/).map((x) => x.trim()).filter(Boolean);
-
+ 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -23,27 +32,30 @@ export default async function handler(req, res) {
     const { para, cc, subject, body, anexos } = req.body || {};
     const to = lista(para);
     if (!to.length || !subject || !body) return res.status(400).json({ error: 'Informe destinatário, assunto e mensagem' });
-
+ 
     const attachments = [];
     let total = 0;
     for (const a of Array.isArray(anexos) ? anexos : []) {
-      if (!a || typeof a.url !== 'string' || !a.url.startsWith(PREFIXO)) {
+      if (!a || typeof a.url !== 'string' || !urlPermitida(a.url)) {
         return res.status(400).json({ error: 'Anexo inválido (só arquivos do sistema são aceitos)' });
       }
       const r = await fetch(a.url);
       if (!r.ok) return res.status(502).json({ error: `Não consegui buscar o arquivo "${a.filename || 'anexo'}" (HTTP ${r.status})` });
       const buf = Buffer.from(await r.arrayBuffer());
+      if (/\.pdf$/i.test(String(a.filename || '')) && buf.slice(0, 5).toString() !== '%PDF-') {
+        return res.status(502).json({ error: `O link de "${a.filename}" não retornou um PDF (o Bling pode ter exigido login). Abra a NF na Logística e baixe manualmente.` });
+      }
       total += buf.length;
       if (total > LIMITE_TOTAL) return res.status(413).json({ error: 'Os anexos passam de 30 MB no total' });
       const nome = String(a.filename || 'anexo.pdf').replace(/[^\w.\- ()]/g, '_').slice(0, 120);
       attachments.push({ filename: nome, content: buf.toString('base64') });
     }
-
+ 
     const payload = { from: FROM, to, subject, text: body };
     const ccs = lista(cc);
     if (ccs.length) payload.cc = ccs;
     if (attachments.length) payload.attachments = attachments;
-
+ 
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -56,3 +68,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
+ 
